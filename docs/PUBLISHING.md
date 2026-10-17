@@ -66,7 +66,7 @@ git push origin v0.1.7
 
 ## Code signing policy
 
-[서명 정책과 신청 상태](CODE-SIGNING.md)를 참고하세요. SignPath Foundation 무료 서명 신청을 준비 중이며 아직 인증서나 서명 서비스 승인을 받지 않았습니다. 현재 공개 v0.1.6은 서명되지 않았습니다.
+[서명 정책과 신청 상태](CODE-SIGNING.md)를 참고하세요. SignPath Foundation 무료 서명 신청을 접수했고 심사 대기 중이며 아직 인증서나 서명 서비스 승인을 받지 않았습니다. 현재 공개 v0.1.6은 서명되지 않았습니다.
 
 `scripts/verify-signatures.ps1`는 앱·입력기·설치 파일의 제품 정보와 서명을 검사합니다. 신뢰되지 않는 서명, 일부 파일만 서명한 패키지, 서로 다른 게시자 인증서, 타임스탬프 누락은 거부합니다. `-RequireTrustedSignatures`를 주면 서명 없는 패키지도 거부합니다.
 

@@ -2,7 +2,7 @@
 
 ## Current status
 
-Atypoi is preparing an application for free open-source code signing through SignPath Foundation. Approval and a production signing certificate have **not** been obtained. The current v0.1.6 release is unsigned. A checksum or a self-signed certificate is not a trusted publisher signature.
+Atypoi's application for free open-source code signing through SignPath Foundation has been submitted and is awaiting review. Approval and a production signing certificate have **not** been obtained. The current v0.1.6 release is unsigned. A checksum or a self-signed certificate is not a trusted publisher signature.
 
 If the application is approved, the intended credit is: “Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).” Until then, this is a proposed provider, not a claim of sponsorship or endorsement. Foundation certificates identify SignPath Foundation as the publisher, rather than the maintainer's personal name.
 

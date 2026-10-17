@@ -88,6 +88,6 @@ powershell -ExecutionPolicy Bypass -File scripts/export-source.ps1
 
 ## 라이선스와 출처
 
-[Code signing policy](docs/CODE-SIGNING.md): 무료 오픈소스 서명 신청을 준비 중이며, 현재 v0.1.6은 서명되지 않았습니다.
+[Code signing policy](docs/CODE-SIGNING.md): 무료 오픈소스 서명 신청을 접수했고 심사 대기 중입니다. 현재 v0.1.6은 서명되지 않았습니다.
 
 소스와 브랜드 자산은 [MIT](LICENSE)로 배포합니다. macOS의 [Seamtype](https://github.com/aimdevlee/seamtype)을 바탕으로 Windows TSF 입력기를 구현했습니다. 사전·코퍼스·도구체인에는 각각의 라이선스가 적용되며, 저작권자와 기여자에 대한 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 보존합니다.
