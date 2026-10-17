@@ -41,4 +41,25 @@ git push -u origin main
 
 저장소 첫 화면은 `README.md`, 상세 안내는 `docs/USAGE.md`입니다. 스크린샷과 타이핑 GIF는 `docs/images`의 상대 경로로 연결되어 GitHub에서도 표시됩니다. 소셜 미리보기 이미지는 `assets/brand/social-preview.png`를 저장소 설정에 사용할 수 있습니다.
 
-GitHub Actions는 빌드·검사를 수행하고 개발 설치 파일과 소스 ZIP을 아티팩트로 보관합니다. 릴리스 게시와 서명은 자동 실행하지 않습니다. 프로젝트 고유의 MIT 라이선스와 모든 제3자 고지를 함께 배포하세요.
+GitHub Actions는 일반 커밋과 PR에서 빌드·검사를 수행하고 설치 파일과 소스 ZIP을 보관합니다. 소스 버전과 일치하는 안정 버전 태그를 push하면 검사에 통과한 동일 아티팩트를 공개 릴리스로 게시합니다. 프로젝트 고유의 MIT 라이선스와 모든 제3자 고지를 함께 배포하세요.
+
+## 다음 버전 자동 배포
+
+1. `src/win/platform.h`, `resources/app.manifest`, `resources/version.rc`와 문서의 버전을 올립니다. 예: `0.1.7`.
+2. 변경을 검토하고 `main`에 push합니다.
+3. 해당 커밋에 태그를 붙여 push합니다.
+
+```powershell
+git tag v0.1.7
+git push origin v0.1.7
+```
+
+태그용 GitHub Actions의 빌드·테스트·패키징이 모두 성공하면 `scripts/publish-release.ps1`가 설치 파일, 소스 ZIP, 해시 목록, `update.txt`를 초안 릴리스에 함께 업로드하고 최신 릴리스로 공개합니다. 소스 버전과 태그가 다르거나 기존 릴리스가 있으면 중단합니다. 기존 파일을 덮어쓰지 말고 새 버전을 만드세요. GitHub Actions의 `GITHUB_TOKEN`만 사용하므로 개인 액세스 토큰을 저장소에 추가할 필요가 없습니다.
+
+기본 업데이트 주소:
+
+`https://github.com/ssrihappy/atypoi/releases/latest/download/update.txt`
+
+`update.txt`에는 버전, 해당 태그의 고정 설치 파일 URL, SHA256이 들어갑니다. 일반 코드 push와 사전 릴리스는 사용자 업데이트 대상이 아닙니다. 공개 릴리스 게시 후 앱이 다음 확인 시점에 감지합니다. 지금 확인하려면 설정의 **업데이트**를 누르세요.
+
+현재 서명 없는 공개 빌드는 공식 저장소의 정확한 버전별 설치 주소와 HTTPS·SHA256을 확인하고 설치 전 사용자의 승인을 받습니다. 이는 게시자 서명 검증과 다릅니다. 서명된 앱은 같은 게시자 서명까지 검사하며, 사용자 지정 업데이트 주소는 신뢰된 서명이 있어야 사용할 수 있습니다. 인증서와 개인키는 저장소에 넣지 마세요.

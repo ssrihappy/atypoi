@@ -114,6 +114,16 @@ int wmain(){
         check(update::sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","SHA256 standard test vector");
         auto manifest=update::parse("version=0.2.0\nurl=https://example.com/setup.exe\nsha256="+std::string(64,'a')+"\n");check(manifest.version==L"0.2.0","update manifest parser");
         check(update::versionParts(L"0.2.0")>update::versionParts(L"0.1.0-dev"),"update version ordering");
+        check(update::newer(L"0.1.6",L"0.1.6-dev"),"stable release upgrades same-version development build");
+        check(!update::newer(L"0.1.6",L"0.1.6")&&!update::newer(L"0.1.5",L"0.1.6"),"no repeated update or downgrade");
+        for(auto invalid:{L"1.2.3.4",L"1.2.3-evil",L"1.2.3/other",L"-1.2.3",L"1.2.65536",L"01.2.3",L"1. 2.3",L"1.2."}){bool rejected=false;try{update::versionParts(invalid);}catch(...){rejected=true;}check(rejected,"malformed update version rejected");}
+        auto officialManifest=update::parse("version=0.1.6\nurl=https://github.com/ssrihappy/atypoi/releases/download/v0.1.6/Atypoi.Setup.exe\nsha256="+std::string(64,'a')+"\n");
+        check(update::official(officialManifest),"official versioned installer accepted");
+        for(auto url:{L"https://github.com/other/atypoi/releases/download/v0.1.6/Atypoi.Setup.exe",L"https://github.com/ssrihappy/atypoi/releases/download/v0.1.5/Atypoi.Setup.exe",L"https://github.com/ssrihappy/atypoi/releases/download/v0.1.6/Atypoi.Setup.exe?other",L"https://github.com.evil.invalid/ssrihappy/atypoi/releases/download/v0.1.6/Atypoi.Setup.exe"}){officialManifest.url=url;check(!update::official(officialManifest),"unofficial update installer rejected");}
+        check(update::publisherAllowed("","",true),"unsigned official GitHub release allowed with user consent");
+        check(!update::publisherAllowed("","",false),"unsigned custom feed rejected");
+        check(update::publisherAllowed("trusted","trusted",true),"matching publisher accepted");
+        check(!update::publisherAllowed("trusted","",true)&&!update::publisherAllowed("trusted","different",true),"signed installations reject unsigned or different publisher updates");
         for(auto invalid:{"version=0.2.0\nurl=http://example.com/a\nsha256=abc", "version=0.2.0\nversion=0.3.0\nurl=https://example.com/a\nsha256=abc"}) {bool rejected=false;try{update::parse(invalid);}catch(...){rejected=true;}check(rejected,"invalid update feed rejected");}
         const std::vector<std::pair<std::string,std::wstring>> compositions={
             {"dkssud",L"안녕"},{"gksrmf",L"한글"},{"gksrnr",L"한국"},{"rkqtk",L"갑사"},{"rkqt",L"값"},{"rkqtdl",L"값이"},

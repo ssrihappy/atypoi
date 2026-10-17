@@ -25,7 +25,9 @@
 3. **Atypoi 입력기 켜기**를 누르거나 `Win + Space`에서 Atypoi를 선택합니다.
 4. **입력 테스트**에서 직접 입력해 보세요. 다른 프로그램은 **앱별 설정**에서 추가할 수 있습니다.
 
-현재 버전은 **0.1.5-dev**, Windows x64용 개발 빌드입니다. 기본 생성 설치 파일에는 게시자 서명이 없습니다.
+현재 버전은 **0.1.6**, Windows x64용 공개 빌드입니다. 설치 파일에는 게시자 서명이 없습니다.
+
+앱은 GitHub의 최신 공개 릴리스를 자동으로 확인하고 다운로드합니다. 알림을 눌러 설치를 승인할 수 있으며, 트레이 메뉴에서 자동 확인을 끌 수 있습니다. 0.1.5-dev 이하 사용자는 이번 설치 파일을 한 번 직접 실행해 주세요.
 
 <p align="center"><img src="docs/images/settings.png" width="660" alt="일반 설정과 우하단 GitHub 링크"></p>
 
@@ -78,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package.ps1
 
 [기여 안내](CONTRIBUTING.md) · [사용 방법](docs/USAGE.md) · [개인정보 처리](docs/PRIVACY.md) · [GitHub 공개 방법](docs/PUBLISHING.md) · [브랜드 가이드](docs/BRAND.md)
 
-GitHub Actions는 빌드·검사 후 서명되지 않은 개발 설치 파일과 소스 ZIP을 아티팩트로 보관합니다. 릴리스를 자동으로 게시하지 않습니다. 공개용 소스는 다음 명령으로 점검·내보낼 수 있습니다.
+GitHub Actions는 빌드·검사 후 설치 파일과 소스 ZIP을 보관합니다. 소스 버전과 일치하는 안정 버전 태그(예: `v0.1.6`)를 push하면 검사를 통과한 파일로 GitHub Release와 업데이트 피드를 함께 게시합니다. 일반 커밋과 PR은 공개 릴리스를 만들지 않습니다. 공개용 소스는 다음 명령으로 점검·내보낼 수 있습니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/export-source.ps1

@@ -38,6 +38,8 @@ bool demoMode=false;
 std::atomic_bool updateCancelled{false};
 std::thread updateWorker;
 update::Result updateResult;
+bool automaticUpdates=true,backgroundUpdate=false;
+ULONGLONG nextUpdateCheck=0;
 std::vector<HWND> controls;
 bool activateProfile() {
     Ptr<ITfInputProcessorProfileMgr> profiles;
@@ -140,8 +142,10 @@ void scaleWindow(HWND window,WPARAM dpi,LPARAM rectPointer) {
     auto rect=reinterpret_cast<RECT*>(rectPointer);SetWindowPos(window,nullptr,rect->left,rect->top,rect->right-rect->left,rect->bottom-rect->top,SWP_NOZORDER|SWP_NOACTIVATE);
 }
 void releaseFonts(HWND window){EnumChildWindows(window,[](HWND child,LPARAM)->BOOL{auto owned=RemovePropW(child,L"Atypoi.Font");if(owned)DeleteObject(owned);return TRUE;},0);RemovePropW(window,L"Atypoi.Dpi");}
-void updateCheck() {
-    if(updateWorker.joinable()){MessageBoxW(mainWindow,L"업데이트를 확인하고 있습니다.",L"업데이트",MB_OK);return;}
+void updateCheck(bool background=false) {
+    if(updateWorker.joinable()){if(!background)MessageBoxW(mainWindow,L"업데이트를 확인하고 있습니다.",L"업데이트",MB_OK);return;}
+    if(!updateResult.path.empty()){if(!background){backgroundUpdate=false;PostMessageW(mainWindow,WM_APP+2,0,0);}return;}
+    backgroundUpdate=background;
     updateCancelled=false;EnableWindow(GetDlgItem(mainWindow,idUpdate),FALSE);
     updateWorker=std::thread([]{
         try{updateResult=update::check(updateCancelled);}
@@ -153,7 +157,7 @@ void menu() {
     HMENU popup=CreatePopupMenu();AppendMenuW(popup,MF_STRING,idPause,config.mode==3?L"자동 판단 다시 켜기":L"일시정지");
     AppendMenuW(popup,MF_STRING,idMode,L"설정 열기");AppendMenuW(popup,MF_STRING,idTest,L"입력 테스트");
     auto app=L"이 앱 등록: "+fileName(foregroundPath);AppendMenuW(popup,MF_STRING|(foregroundPath.empty()?MF_GRAYED:0),idAddForeground,app.c_str());
-    AppendMenuW(popup,MF_SEPARATOR,0,nullptr);AppendMenuW(popup,MF_STRING,idUpdate,L"업데이트 확인");AppendMenuW(popup,MF_STRING,idExit,L"종료");
+    AppendMenuW(popup,MF_SEPARATOR,0,nullptr);AppendMenuW(popup,MF_STRING|(automaticUpdates?MF_CHECKED:0),124,L"자동 업데이트 확인");AppendMenuW(popup,MF_STRING,idUpdate,L"업데이트 확인");AppendMenuW(popup,MF_STRING,idExit,L"종료");
     POINT pos;GetCursorPos(&pos);SetForegroundWindow(mainWindow);auto chosen=TrackPopupMenu(popup,TPM_RETURNCMD|TPM_RIGHTBUTTON,pos.x,pos.y,0,mainWindow,nullptr);DestroyMenu(popup);PostMessageW(mainWindow,WM_NULL,0,0);if(chosen)SendMessageW(mainWindow,WM_COMMAND,chosen,0);
 }
 void preview(HWND window) {
@@ -236,12 +240,21 @@ void createSettings(HWND window) {
     refreshApps();showPage(false);
 }
 LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
+    // Transparent native controls ask the parent to paint their background.
+    if(message==WM_ERASEBKGND){ui::clear(window,reinterpret_cast<HDC>(w));return TRUE;}
     if(message==WM_NOTIFY){auto event=reinterpret_cast<NMHDR*>(l);if(event->idFrom==122&&(event->code==NM_CLICK||event->code==NM_RETURN)){ShellExecuteW(window,L"open",L"https://github.com/ssrihappy/atypoi",nullptr,nullptr,SW_SHOWNORMAL);return 0;}}
     if(message==WM_APP+2){
         if(updateWorker.joinable())updateWorker.join();EnableWindow(GetDlgItem(window,idUpdate),TRUE);
+        if(backgroundUpdate){
+            if(!updateResult.path.empty()){
+                NOTIFYICONDATAW notice{};notice.cbSize=sizeof notice;notice.hWnd=window;notice.uID=1;notice.uFlags=NIF_INFO;notice.dwInfoFlags=NIIF_INFO;
+                wcscpy_s(notice.szInfoTitle,L"Atypoi 업데이트 준비 완료");wcscpy_s(notice.szInfo,L"새 버전을 다운로드했습니다. 알림 또는 설정의 업데이트 버튼을 눌러 설치하세요.");Shell_NotifyIconW(NIM_MODIFY,&notice);
+            }
+            return 0;
+        }
         if(updateResult.path.empty())MessageBoxW(window,updateResult.message.c_str(),L"업데이트",MB_OK|MB_ICONINFORMATION);
         else if(MessageBoxW(window,(updateResult.version+L"\n\n"+updateResult.message).c_str(),L"업데이트",MB_YESNO|MB_ICONQUESTION)==IDYES)ShellExecuteW(window,L"open",updateResult.path.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
-        else DeleteFileW(updateResult.path.c_str());
+        else {DeleteFileW(updateResult.path.c_str());updateResult={};}
         return 0;
     }
     if(message==WM_CTLCOLORSTATIC||message==WM_CTLCOLORBTN||message==WM_CTLCOLOREDIT||message==WM_CTLCOLORLISTBOX)return ui::color(w,l);
@@ -250,9 +263,10 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_CREATE){mainWindow=window;SetPropW(window,L"Atypoi.Dpi",reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(GetDpiForWindow(window))));createSettings(window);SetTimer(window,1,500,nullptr);return 0;}
     if(message==taskbarCreated){tray(true);return 0;}
     if(message==trayMessage) {
-        auto action=LOWORD(l);if(action==WM_CONTEXTMENU||action==WM_RBUTTONUP)menu();else if(action==NIN_SELECT||action==NIN_KEYSELECT||action==WM_LBUTTONDBLCLK)showSettings();return 0;
+        auto action=LOWORD(l);if(action==NIN_BALLOONUSERCLICK)updateCheck();else if(action==WM_CONTEXTMENU||action==WM_RBUTTONUP)menu();else if(action==NIN_SELECT||action==NIN_KEYSELECT||action==WM_LBUTTONDBLCLK)showSettings();return 0;
     }
     if(message==WM_TIMER) {
+        if(!demoMode&&automaticUpdates&&GetTickCount64()>=nextUpdateCheck){nextUpdateCheck=GetTickCount64()+24ULL*60*60*1000;updateCheck(true);}
         InterlockedExchange(&state->heartbeat,static_cast<LONG>(GetTickCount()));
         DWORD pid=0;auto active=GetForegroundWindow();GetWindowThreadProcessId(active,&pid);
         if(pid&&pid!=GetCurrentProcessId()){
@@ -271,6 +285,12 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_COMMAND) {
         int id=LOWORD(w),event=HIWORD(w);
         if(id==120||id==121){showPage(id==121);return 0;}
+        if(id==124){
+            DWORD enabled=automaticUpdates?0:1;
+            if(demoMode||RegSetKeyValueW(HKEY_CURRENT_USER,settingsKey,L"AutomaticUpdates",REG_DWORD,&enabled,sizeof enabled)==ERROR_SUCCESS){automaticUpdates=enabled!=0;nextUpdateCheck=GetTickCount64()+10000;}
+            else MessageBoxW(window,L"자동 업데이트 설정을 저장하지 못했습니다.",L"업데이트",MB_OK|MB_ICONWARNING);
+            return 0;
+        }
         if(id==idMode){if(event==CBN_SELCHANGE){config.mode=static_cast<LONG>(SendMessageW(modeBox,CB_GETCURSEL,0,0));publish();lastStatus=-1;tray();}else showSettings();}
         else if(id==idShortcut&&event==CBN_SELCHANGE){config.shortcut=static_cast<LONG>(SendMessageW(shortcutBox,CB_GETCURSEL,0,0));publish();}
         else if(id==idStrict){config.strict=isChecked(strictBox);publish();}
@@ -321,6 +341,7 @@ int WINAPI wWinMain(HINSTANCE app,HINSTANCE,LPWSTR,int) {
     mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(Shared),objectName(L"State").c_str());
     if(!mapping)return 1;state=static_cast<Shared*>(MapViewOfFile(mapping,FILE_MAP_ALL_ACCESS,0,0,sizeof(Shared)));if(!state)return 1;
     config=demoMode?Config{}:loadConfig();if(config.mode==3)config.mode=0;
+    DWORD automatic=1,size=sizeof automatic;RegGetValueW(HKEY_CURRENT_USER,settingsKey,L"AutomaticUpdates",RRF_RT_REG_DWORD,nullptr,&automatic,&size);automaticUpdates=automatic!=0;nextUpdateCheck=GetTickCount64()+10000;
     state->magic=0x41545931;InterlockedExchange(&state->sequence,0);writeConfig(state,config);InterlockedExchange(&state->heartbeat,static_cast<LONG>(GetTickCount()));InterlockedExchange(&state->running,1);
     auto dpi=GetDpiForSystem();font=ui::font(14,FW_NORMAL,dpi);titleFont=ui::font(34,FW_SEMIBOLD,dpi,L"Segoe UI");sectionFont=ui::font(16,FW_BOLD,dpi);
     taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");

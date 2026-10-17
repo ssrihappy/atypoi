@@ -11,9 +11,10 @@
 #include <bcrypt.h>
 
 #ifndef ATYPOI_UPDATE_FEED
-#define ATYPOI_UPDATE_FEED L""
+#define ATYPOI_UPDATE_FEED L"https://github.com/ssrihappy/atypoi/releases/latest/download/update.txt"
 #endif
 namespace atypoi::win::update {
+inline constexpr wchar_t officialFeed[]=L"https://github.com/ssrihappy/atypoi/releases/latest/download/update.txt";
 struct Manifest {std::wstring version,url;std::string sha256;};
 inline bool https(const std::wstring& url){return url.starts_with(L"https://") && url.size()<4096 && url.find_first_of(L"\r\n\t ")==std::wstring::npos;}
 inline Manifest parse(std::string_view input){
@@ -31,10 +32,25 @@ inline Manifest parse(std::string_view input){
     return result;
 }
 inline std::array<unsigned,3> versionParts(const std::wstring& text){
-    std::array<unsigned,3> result{};std::wistringstream stream(text);wchar_t dot=0;
-    if(!(stream>>result[0]>>dot)||dot!=L'.'||!(stream>>result[1]>>dot)||dot!=L'.'||!(stream>>result[2]))throw std::runtime_error("Invalid version");
-    if(stream.peek()!=WEOF&&stream.peek()!=L'-')throw std::runtime_error("Invalid version suffix");return result;
+    std::array<unsigned,3> result{};size_t pos=0;
+    for(size_t part=0;part<3;++part){
+        size_t start=pos;
+        while(pos<text.size()&&text[pos]>=L'0'&&text[pos]<=L'9'){
+            auto digit=static_cast<unsigned>(text[pos++]-L'0');
+            if(result[part]>6553||(result[part]==6553&&digit>5))throw std::runtime_error("Version component exceeds 65535");
+            result[part]=result[part]*10+digit;
+        }
+        if(pos==start||(pos-start>1&&text[start]==L'0'))throw std::runtime_error("Invalid version component");
+        if(part<2&&(pos>=text.size()||text[pos++]!=L'.'))throw std::runtime_error("Invalid version separator");
+    }
+    if(pos!=text.size()&&text.substr(pos)!=L"-dev")throw std::runtime_error("Invalid version suffix");return result;
 }
+inline bool newer(const std::wstring& candidate,const std::wstring& current){auto a=versionParts(candidate),b=versionParts(current);return a>b||(a==b&&current.ends_with(L"-dev")&&!candidate.ends_with(L"-dev"));}
+inline bool official(const Manifest& manifest){
+    versionParts(manifest.version);
+    return !manifest.version.ends_with(L"-dev")&&manifest.url==L"https://github.com/ssrihappy/atypoi/releases/download/v"+manifest.version+L"/Atypoi.Setup.exe";
+}
+inline bool publisherAllowed(const std::string& installed,const std::string& downloaded,bool officialRelease){return installed.empty()?officialRelease:!downloaded.empty()&&installed==downloaded;}
 struct Internet {HINTERNET handle=nullptr;explicit Internet(HINTERNET h):handle(h){}~Internet(){if(handle)WinHttpCloseHandle(handle);}Internet(const Internet&)=delete;};
 inline std::string get(const std::wstring& url,size_t maxBytes,const std::atomic_bool& cancel){
     if(!https(url))throw std::runtime_error("HTTPS required");
@@ -68,18 +84,21 @@ inline std::string signer(const std::wstring& path){
     data.dwStateAction=WTD_STATEACTION_CLOSE;WinVerifyTrust(nullptr,&action,&data);return result;
 }
 struct Result {std::wstring message,path,version;};
-inline Result check(const std::atomic_bool& cancel){
+inline Result check(const std::atomic_bool& cancel,const std::wstring& current=atypoi::win::version){
     if(std::wstring(ATYPOI_UPDATE_FEED).empty())return {L"공개 업데이트 주소가 아직 설정되지 않았습니다. 새 개발용 설치 파일로 업데이트할 수 있습니다.",{},{}};
-    auto ownSigner=signer(modulePath());if(ownSigner.empty())throw std::runtime_error("Installed application has no trusted publisher signature");
     auto manifest=parse(get(ATYPOI_UPDATE_FEED,16384,cancel));
-    if(versionParts(manifest.version)<=versionParts(atypoi::win::version))return {L"현재 최신 버전을 사용하고 있습니다.",{},{}};
+    bool officialRelease=std::wstring(ATYPOI_UPDATE_FEED)==officialFeed&&official(manifest);
+    if(std::wstring(ATYPOI_UPDATE_FEED)==officialFeed&&!officialRelease)throw std::runtime_error("Update is not an official tagged release");
+    if(!newer(manifest.version,current))return {L"현재 최신 버전을 사용하고 있습니다.",{},{}};
+    auto ownSigner=signer(modulePath());
+    if(ownSigner.empty()&&!officialRelease)throw std::runtime_error("Custom update feeds require a trusted publisher signature");
     auto bytes=get(manifest.url,64*1024*1024,cancel);if(sha256(bytes)!=manifest.sha256)throw std::runtime_error("Update SHA256 mismatch");
     wchar_t temp[32768];if(!GetTempPathW(32768,temp))throw std::runtime_error("Temporary folder unavailable");GUID unique;CoCreateGuid(&unique);
     auto path=std::filesystem::path(temp)/(L"Atypoi.Update."+guidString(unique)+L".exe");
     try{
         std::ofstream out(path,std::ios::binary);out.write(bytes.data(),static_cast<std::streamsize>(bytes.size()));out.close();if(!out)throw std::runtime_error("Cannot save update");
-        if(cancel||signer(path.wstring())!=ownSigner)throw std::runtime_error("Update publisher signature mismatch");
+        if(cancel||!publisherAllowed(ownSigner,signer(path.wstring()),officialRelease))throw std::runtime_error("Update publisher signature mismatch");
     }catch(...){std::error_code ignored;std::filesystem::remove(path,ignored);throw;}
-    return {L"새 버전의 파일과 게시자 서명을 확인했습니다. 설치 프로그램을 열까요?",path.wstring(),manifest.version};
+    return {ownSigner.empty()?L"공식 GitHub 릴리스에서 다운로드하고 SHA256을 확인했습니다. 게시자 서명이 없는 설치 파일입니다. 업데이트를 설치할까요?":L"새 버전의 파일과 게시자 서명을 확인했습니다. 업데이트를 설치할까요?",path.wstring(),manifest.version};
 }
 }

@@ -25,7 +25,7 @@ inline constexpr GUID uiLessCategory={0x49d2f9cf,0x1f5e,0x11d7,{0xa6,0xd3,0x00,0
 inline constexpr LANGID languageId=0x0412;
 inline constexpr wchar_t appClass[]=L"Atypoi.Tray.1";
 inline constexpr wchar_t settingsKey[]=L"Software\\Atypoi";
-inline constexpr wchar_t version[]=L"0.1.5-dev";
+inline constexpr wchar_t version[]=L"0.1.6";
 inline constexpr size_t maxApps=32;
 
 template<class T> class Ptr {

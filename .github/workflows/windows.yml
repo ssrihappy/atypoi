@@ -28,3 +28,24 @@ jobs:
           name: atypoi-windows-x64-dev
           path: dist/
           retention-days: 14
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && github.event_name == 'push'
+    needs: build
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    concurrency:
+      group: public-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: atypoi-windows-x64-dev
+          path: dist
+      - name: Publish verified release and update feed
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/publish-release.ps1 -Tag $env:RELEASE_TAG
