@@ -1,4 +1,5 @@
 # Export only the reviewable project, without local tools, caches or user data.
+param([switch]$ArchiveOnly)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'audit-publication.ps1')
@@ -11,6 +12,7 @@ New-Item -ItemType Directory -Force (Join-Path $root 'dist') | Out-Null
 $target = Join-Path $root "dist\Atypoi-$version-source.zip"
 $items = @('src','resources','scripts','tests','data','third_party','docs','assets','.github','.gitignore','LICENSE','README.md','CONTRIBUTING.md','PRD.md','THIRD_PARTY_NOTICES.md')
 $files = @($items | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $root $_) -File -Recurse -Force } | Sort-Object FullName)
+if(-not $ArchiveOnly){
 $snapshot=Join-Path $root 'publish\atypoi'
 $snapshotFull=[IO.Path]::GetFullPath($snapshot)
 if(-not $snapshotFull.StartsWith(([IO.Path]::GetFullPath($root)+[IO.Path]::DirectorySeparatorChar),[StringComparison]::OrdinalIgnoreCase)){throw 'Export directory must stay inside the project'}
@@ -27,6 +29,7 @@ foreach($file in $files){
     New-Item -ItemType Directory -Force (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
 }
+}
 $stream = [IO.File]::Open($target,[IO.FileMode]::Create,[IO.FileAccess]::ReadWrite)
 $zip = [IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$false)
 try {
@@ -42,4 +45,4 @@ try {
 } finally {$check.Dispose()}
 Get-ChildItem (Join-Path $root 'dist\Atypoi*') -File | Get-FileHash -Algorithm SHA256 | Select-Object @{N='File';E={Split-Path -Leaf $_.Path}},Hash | ConvertTo-Json | Set-Content (Join-Path $root 'dist\SHA256.json') -Encoding UTF8
 Write-Host "Source archive ready: $target ($($files.Count) files)"
-Write-Host 'Upload folder ready: publish/atypoi (no Git history or local build data)'
+if(-not $ArchiveOnly){Write-Host 'Upload folder ready: publish/atypoi (no Git history or local build data)'}

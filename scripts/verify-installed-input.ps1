@@ -16,7 +16,7 @@ function Focus([string]$id){
  [DesktopUi]::ClickAt([int]($b.Left+30),[int]($b.Top+15))
 }
 function ClearField([string]$id){Focus $id;[DesktopUi]::Chord(17,65);[DesktopUi]::Press(8)}
-function TypeKeys([string]$s){[DesktopUi]::Type($p.MainWindowHandle,$s)}
+function TypeKeys([string]$s){[DesktopUi]::Type($p.MainWindowHandle,$s,25)}
 function Value([string]$id){$e=Field $id;([System.Windows.Automation.ValuePattern]$e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)).Current.Value.Replace("`r`n","`n")}
 function Check([string]$name,[string]$actual,[string]$expected){
  $pass=$actual -ceq $expected;$results.Add([pscustomobject]@{test=$name;passed=$pass;actual=$actual;expected=$expected})

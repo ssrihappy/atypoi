@@ -3,8 +3,8 @@
 #define ATYPOI_FILETYPE VFT_APP
 #endif
 1 VERSIONINFO
-FILEVERSION 0,1,4,0
-PRODUCTVERSION 0,1,4,0
+FILEVERSION 0,1,5,0
+PRODUCTVERSION 0,1,5,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS VS_FF_PRERELEASE
 FILEOS VOS_NT_WINDOWS32
@@ -16,9 +16,9 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Atypoi contributors\0"
       VALUE "FileDescription", "Atypoi - Korean and English input\0"
-      VALUE "FileVersion", "0.1.4-dev\0"
+      VALUE "FileVersion", "0.1.5-dev\0"
       VALUE "ProductName", "Atypoi\0"
-      VALUE "ProductVersion", "0.1.4-dev\0"
+      VALUE "ProductVersion", "0.1.5-dev\0"
       VALUE "LegalCopyright", "Copyright (c) 2026 Atypoi contributors\0"
     END
   END

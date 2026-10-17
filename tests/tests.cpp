@@ -1,6 +1,7 @@
 #include "../src/win/tsf_compat.h"
 #include "windows_host.h"
 #include "../src/win/update.h"
+#include "../src/win/host_version.h"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -13,6 +14,40 @@ int failures=0,checks=0;
 void check(bool condition,const std::string& message){++checks;if(!condition){++failures;std::cerr<<"FAIL: "<<message<<"\n";}}
 std::string file(const char* path){std::ifstream f(path,std::ios::binary);if(!f)throw std::runtime_error(path);return {std::istreambuf_iterator<char>(f),{}};}
 void expectText(const std::wstring& actual,const std::wstring& expected,const std::string& label){check(actual==expected,label+" expected="+toUtf8(expected)+" actual="+toUtf8(actual));}
+std::string twoSetKeys(std::wstring_view word) {
+    const std::vector<std::string> initial={"r","R","s","e","E","f","a","q","Q","t","T","d","w","W","c","z","x","v","g"};
+    const std::vector<std::string> vowel={"k","o","i","O","j","p","u","P","h","hk","ho","hl","y","n","nj","np","nl","b","m","ml","l"};
+    const std::vector<std::string> final={"","r","R","rt","s","sw","sg","e","f","fr","fa","fq","ft","fx","fv","fg","a","q","qt","t","T","d","w","c","z","x","v","g"};
+    std::string out;for(auto c:word){if(c<0xac00||c>0xd7a3)throw std::runtime_error("Expected Hangul fixture");auto n=c-0xac00;out+=initial[n/588]+vowel[(n%588)/28]+final[n%28];}return out;
+}
+void pastTenseRegression(const Engine& engine) {
+    for(auto stem:{L"만들었",L"먹었",L"읽었",L"앉았",L"닮았",L"괜찮았",L"알았",L"몰랐",L"맛있었",L"재미있었",L"아름다웠",L"걸었",L"도왔",L"없었",L"핥았",L"깎았",L"묶었",L"빨랐",L"기뻤",L"슬펐",L"됐",L"되었",L"썼",L"있었",L"뒀",L"줬",L"꺼냈",L"나왔",L"갔",L"봤",L"씻었",L"쫓았",L"쌓았",L"섞었",L"갚았",L"놓았",L"많았",L"밝았",L"넓었",L"젊었",L"옳았",L"끓었",L"싫었",L"끊었",L"읽혔",L"끓였",L"바뀌었",L"뛰었",L"깨졌",L"잠갔",L"치렀",L"골랐",L"들었",L"불렀",L"푸르렀",L"따뜻했",L"깨끗했",L"필요했",L"정확했",L"시작했",L"종료했"})
+    for(auto ending:{L"다",L"어요",L"습니다",L"고",L"는데",L"지만",L"었어요",L"겠어요"}) {
+        auto word=std::wstring(stem)+ending;auto input=twoSetKeys(word);auto label="past tense "+toUtf8(word);
+        expectText(compose(input).text,word,label+" composition");
+        expectText(engine.decide(input).text,word,label+" isolated");
+        expectText(engine.decide(input,Language::English).text,word,label+" after English");
+        for(bool englishFirst:{false,true}) {
+            Session session(engine);if(englishFirst){for(char c:std::string("hello"))session.append(c,Mode::Auto,false);session.commit();}
+            for(char c:input)session.append(c,Mode::Auto,false);
+            expectText(session.display().text,word,label+" live");
+            session.backspace(Mode::Auto,false);input.pop_back();
+            expectText(session.display().text,compose(input).text,label+" backspace");
+            auto original=twoSetKeys(word);session.append(original.back(),Mode::Auto,false);input=original;
+            expectText(session.commit(),word,label+" retype and commit");
+        }
+    }
+    for(auto input:{"hello","sunlight","leaf","GoT","got","Top","top","Pop","Root","ROOT","TOP","POT","TREE","POWER","PROPER","WROTE","API","HTTP","QWERTY","The","the"}){
+        Session session(engine);for(char c:std::string("hello"))session.append(c,Mode::Auto,false);session.commit();for(char c:std::string(input))session.append(c,Mode::Auto,false);
+        expectText(session.commit(),fromUtf8(input),"English after shifted-evidence change "+std::string(input));
+    }
+    for(auto [input,expected]:std::vector<std::pair<std::string,std::wstring>>{{"qkRNl",L"바뀌"},{"qkRNldjTek",L"바뀌었다"},{"dlTDjTek",L"있었다"},{"aksemfdjTDjdy",L"만들었어요"}}){
+        expectText(compose(input).text,expected,"held Shift composition");
+        expectText(engine.decide(input,Language::English).text,expected,"held Shift after English");
+        Session live(engine);for(char c:std::string(input))live.append(c,Mode::Auto,false);expectText(live.commit(),expected,"held Shift session");
+    }
+    for(auto input:{"TONE","POINT","ROOTS","TREE","POWER","TOP","QWERTY","GoT","API","tjsA","RMS","RNS","TKS"})expectText(engine.decide(input,Language::English).text,fromUtf8(input),"uppercase English protected");
+}
 void integration(ITfTextInputProcessorEx* service,ITfThreadMgr* manager,TfClientId client){
     HANDLE mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(Shared),objectName(L"State").c_str());
     if(!mapping||GetLastError()==ERROR_ALREADY_EXISTS){if(mapping)CloseHandle(mapping);throw std::runtime_error("Close Atypoi before integration tests; tests do not alter a running app's state");}
@@ -57,6 +92,10 @@ void integration(ITfTextInputProcessorEx* service,ITfThreadMgr* manager,TfClient
     type("k ");type("hello goT");expectText(store->text,beforeFinals+L"sunlight이 선명하게 leaf를 핥고 있었다 hello 했","TSF tense final after English");
     press(VK_BACK);expectText(store->text,beforeFinals+L"sunlight이 선명하게 leaf를 핥고 있었다 hello 해","TSF remove tense final");
     press(VK_RETURN);press(VK_SPACE,' ');
+    auto beforePast=store->text;type("aksemfdjTek ");expectText(store->text,beforePast+L"만들었다 ","TSF made with Shift final");
+    type("hello RoRmtgoTek");expectText(store->text,beforePast+L"만들었다 hello 깨끗했다","TSF shifted consonants inside past tense after English");
+    press(VK_BACK);expectText(store->text,beforePast+L"만들었다 hello 깨끗했ㄷ","TSF past ending backspace");type("k ");
+    auto beforeHeldShift=store->text;type("qkRNldjTek ");expectText(store->text,beforeHeldShift+L"바뀌었다 ","TSF ordinary key while Shift is held after doubled consonant");
     store->failSelection=true;auto beforeFailure=store->text;check(press('D','d'),"key consumed after text inserted despite selection failure");expectText(store->text,beforeFailure+L"d","no duplicated key on partial edit failure");store->failSelection=false;
     config.mode=3;writeConfig(shared,config);check(!press('A'),"pause bypasses input");config.mode=0;writeConfig(shared,config);
     type(" dkssud");shared->running=0;check(!press('X'),"tray exit bypasses input");
@@ -66,6 +105,12 @@ void integration(ITfTextInputProcessorEx* service,ITfThreadMgr* manager,TfClient
 int wmain(){
     try {
         Engine engine(file("data/english_words.txt"),file("data/korean_words.txt"),file("data/korean_syllables.txt"));check(engine.ready(),"full dictionaries loaded");
+        pastTenseRegression(engine);
+        check(host::inspect(0,L"unused")==host::InputService::Unknown,"invalid host inspection is unknown");
+        CreateDirectoryW(L"build\\host-version",nullptr);check(CopyFileW(L"build\\Atypoi.TestIME.dll",L"build\\host-version\\Atypoi.IME.dll",FALSE),"prepare isolated host-version module");
+        auto hostDll=LoadLibraryW(L"build\\host-version\\Atypoi.IME.dll");check(hostDll!=nullptr,"load isolated host-version module");
+        if(hostDll){wchar_t loaded[32768]{};GetModuleFileNameW(hostDll,loaded,32768);check(host::inspect(GetCurrentProcessId(),loaded)==host::InputService::Current,"detect matching installed input service");check(host::inspect(GetCurrentProcessId(),L"C:\\different-version\\Atypoi.IME.dll")==host::InputService::Outdated,"detect previously loaded input service");FreeLibrary(hostDll);}
+        DeleteFileW(L"build\\host-version\\Atypoi.IME.dll");RemoveDirectoryW(L"build\\host-version");
         check(update::sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","SHA256 standard test vector");
         auto manifest=update::parse("version=0.2.0\nurl=https://example.com/setup.exe\nsha256="+std::string(64,'a')+"\n");check(manifest.version==L"0.2.0","update manifest parser");
         check(update::versionParts(L"0.2.0")>update::versionParts(L"0.1.0-dev"),"update version ordering");

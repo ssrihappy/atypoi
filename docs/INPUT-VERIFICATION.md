@@ -4,7 +4,13 @@
 
 ## 자동 검사
 
-`scripts/build.ps1`은 **19,452개 검사**를 실행합니다. 두벌식 한글 11,172개 음절, 무작위 조합, 혼합 조사, 후보 전환, 자모 삭제, 보호 정책, 실제 DLL의 COM·TSF 편집 세션을 검사합니다. 키 구독은 테스트용 어댑터를 사용하며 제품의 공유 메모리·사용자 설정과 분리합니다.
+`scripts/build.ps1`은 **23,899개 검사**를 실행합니다. 두벌식 한글 11,172개 음절, 무작위 조합, 혼합 조사, 후보 전환, 자모 삭제, 보호 정책, 실제 DLL의 COM·TSF 편집 세션을 검사합니다. 키 구독은 테스트용 어댑터를 사용하며 제품의 공유 메모리·사용자 설정과 분리합니다.
+
+과거형 어간 61개와 어미 8개를 결합한 **488개 조합**을 단독·영어 문맥 뒤에서 판정하고, 세션의 삭제·재입력·확정을 검사합니다. `만들었다·만들었어요·만들었습니다`, 단어 중간에 Shift 쌍자음이 있는 `깨끗했다`, 겹받침이 있는 `읽었다·앉았다·핥았다` 등을 포함합니다. 이 고정 회귀 집합을 독립 정확도 평가로 해석하지 않습니다.
+
+쌍자음 Shift 입력 직후 일반 키에도 Shift가 적용된 `qkRNldjTek` → `바뀌었다`, `aksemfdjTDjdy` → `만들었어요`를 검사합니다. 완성된 영어 단어와 영문 약어는 원래 대소문자로 유지합니다. Shift가 전혀 다른 쌍자음 키 자체에 적용되어 다른 한글이 되는 오타까지 임의로 교정하는 기능은 아닙니다.
+
+이미 열린 앱의 DLL은 업그레이드로 교체되지 않을 수 있습니다. 모듈 검사에서 현재 설치와 다른 Atypoi 입력기가 보이면 재시작 안내를 표시합니다. 이 동작은 격리한 모듈의 실제 로딩·경로 비교로 검사합니다.
 
 ## 실제 입력 검사
 
@@ -27,6 +33,8 @@
 
 위 항목을 **22개 검사**로 확인합니다. 검증 시 설치 DLL과 브라우저가 로드한 DLL의 SHA-256도 비교합니다. 실행 중인 앱은 이전 DLL을 유지할 수 있으므로 업데이트 후 다시 열어야 합니다.
 
+`verify-past-tense.ps1`은 `tests/past-tense-input.json`의 과거형·쌍자음·겹받침·이어 누른 Shift와 삭제·재입력·후보 전환을 **16개 추가 검사**로 확인합니다. 0.1.5 개발 빌드에서 두 스크립트의 **38개 실제 Chrome 입력 검사**를 통과했으며 최종 배포 DLL의 로딩도 확인했습니다.
+
 ## 재현
 
 ```powershell
@@ -35,6 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 powershell -ExecutionPolicy Bypass -File scripts/test-desktop-input.ps1
 powershell -ExecutionPolicy Bypass -File scripts/test-browser-input.ps1 -Launch
 powershell -ExecutionPolicy Bypass -File scripts/verify-installed-input.ps1
+powershell -ExecutionPolicy Bypass -File scripts/verify-past-tense.ps1
 ```
 
 검사 중에는 전용 창의 키보드·마우스를 자동으로 조작합니다. 브라우저 재검사 전 기존 전용 테스트 브라우저를 닫으세요. 마지막 스크립트는 모드와 후보 단축키를 자동·F9로 설정합니다.

@@ -8,7 +8,13 @@ if($Launch){
  $p=Start-Process 'C:\Program Files\Google\Chrome\Application\chrome.exe' -ArgumentList @('--user-data-dir="'+$projectRoot+'\build\chrome-verification"','--no-first-run','--no-default-browser-check','--force-renderer-accessibility','--new-window','"'+$projectRoot+'\tests\browser-input.html"') -PassThru
  $p.Id | Set-Content "$projectRoot\build\test-browser-pid.txt"
  [void]$p.WaitForInputIdle(10000)
- Start-Sleep -Milliseconds 800
+ $deadline=[DateTime]::UtcNow.AddSeconds(10)
+ do {
+  $p.Refresh()
+  if($p.HasExited){throw 'Test browser reused another process; close the previous test profile and launch again'}
+  if($p.MainWindowTitle -like 'Atypoi Windows keyboard verification*'){break}
+  Start-Sleep -Milliseconds 100
+ } while([DateTime]::UtcNow -lt $deadline)
 } else {$p=Get-Process -Id ([int](Get-Content "$projectRoot\build\test-browser-pid.txt"))}
 $p.Refresh()
 if($p.MainWindowTitle -notlike 'Atypoi Windows keyboard verification*'){throw 'Unexpected browser page. No input sent.'}

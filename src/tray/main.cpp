@@ -1,6 +1,7 @@
 #include "../win/platform.h"
 #include "../win/update.h"
 #include "../win/ui.h"
+#include "../win/host_version.h"
 #include <commctrl.h>
 #include <commdlg.h>
 #include <windowsx.h>
@@ -27,6 +28,9 @@ Shared* state=nullptr;
 Config config;
 std::unique_ptr<Engine> engine;
 std::wstring foregroundPath;
+std::wstring installedIme;
+DWORD lastHostPid=0,hostProbeTick=0;
+bool outdatedHost=false;
 UINT taskbarCreated;
 HICON trayIcon=nullptr;
 LONG lastStatus=-1;
@@ -90,7 +94,7 @@ HICON makeIcon(LONG status) {
     RECT rect{0,0,size,size};FillRect(dc,&rect,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
     ICONINFO brandInfo{};auto brand=ui::icon(instance,size);if(brand){GetIconInfo(brand,&brandInfo);DrawIconEx(dc,0,0,brand,size,size,0,nullptr,DI_NORMAL);DestroyIcon(brand);}
     // The recognizable brand stays constant; a badge and tooltip convey state.
-    auto badge=CreateSolidBrush(status==1?RGB(85,224,174):status==4?RGB(255,196,85):status==6?RGB(244,101,113):RGB(211,214,229));auto oldBrush=SelectObject(dc,badge);auto oldPen=SelectObject(dc,GetStockObject(NULL_PEN));Ellipse(dc,size*2/3,size*2/3,size,size);SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(badge);SelectObject(dc,old);
+    auto badge=CreateSolidBrush(status==1?RGB(85,224,174):(status==4||status==8)?RGB(255,196,85):status==6?RGB(244,101,113):RGB(211,214,229));auto oldBrush=SelectObject(dc,badge);auto oldPen=SelectObject(dc,GetStockObject(NULL_PEN));Ellipse(dc,size*2/3,size*2/3,size,size);SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(badge);SelectObject(dc,old);
     auto oldMask=SelectObject(dc,mask);PatBlt(dc,0,0,size,size,BLACKNESS);
     if(brandInfo.hbmMask){auto source=CreateCompatibleDC(screen);auto previous=SelectObject(source,brandInfo.hbmMask);BitBlt(dc,0,0,size,size,source,0,0,SRCCOPY);SelectObject(source,previous);DeleteDC(source);}
     oldBrush=SelectObject(dc,GetStockObject(BLACK_BRUSH));oldPen=SelectObject(dc,GetStockObject(NULL_PEN));Ellipse(dc,size*2/3,size*2/3,size,size);SelectObject(dc,oldBrush);SelectObject(dc,oldPen);SelectObject(dc,oldMask);
@@ -99,7 +103,7 @@ HICON makeIcon(LONG status) {
 }
 std::wstring statusText(LONG status) {
     if(config.mode==3)return L"일시정지 — 직접 입력을 전달합니다";
-    switch(status){case 1:return L"자동 — 한글과 영어를 판단합니다";case 2:return L"한글 고정 — 두벌식으로 입력합니다";case 3:return L"영문 고정 — 영어를 그대로 입력합니다";case 5:return L"현재 앱은 자동 판단 제외 상태입니다";case 6:return L"입력 오류 — 자동 판단을 중지했습니다";case 7:return L"보호·미지원 입력란 — 원래 키를 전달합니다";default:return L"입력기 선택 필요 — 오른쪽 버튼으로 켜세요";}
+    switch(status){case 1:return L"자동 — 한글과 영어를 판단합니다";case 2:return L"한글 고정 — 두벌식으로 입력합니다";case 3:return L"영문 고정 — 영어를 그대로 입력합니다";case 5:return L"현재 앱은 자동 판단 제외 상태입니다";case 6:return L"입력 오류 — 자동 판단을 중지했습니다";case 7:return L"보호·미지원 입력란 — 원래 키를 전달합니다";case 8:return L"이전 입력기 사용 중 — 앱을 완전히 종료 후 다시 여세요";default:return L"입력기 선택 필요 — 오른쪽 버튼으로 켜세요";}
 }
 void tray(bool add=false) {
     DWORD foreground=0;GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
@@ -109,6 +113,7 @@ void tray(bool add=false) {
         Ptr<ITfInputProcessorProfileMgr> profiles;TF_INPUTPROCESSORPROFILE active{};
         if(SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles,nullptr,CLSCTX_INPROC_SERVER,__uuidof(ITfInputProcessorProfileMgr),reinterpret_cast<void**>(profiles.put())))&&SUCCEEDED(profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD,&active)))status=IsEqualGUID(active.clsid,serviceId)?config.mode+1:0;
     }
+    if(outdatedHost&&(foreground==lastHostPid||GetForegroundWindow()==mainWindow))status=8;
     if(config.mode==3)status=4;
     auto message=statusText(status);if(text(statusLabel)!=message)SetWindowTextW(statusLabel,message.c_str());
     if(!add && lastStatus==status)return;lastStatus=status;
@@ -201,7 +206,7 @@ void createSettings(HWND window) {
     auto hint=label(window,L"AI + typo",582,118,130);ui::outer(hint);ui::secondary(hint);
     creatingPage=1;
     auto statusTitle=label(window,L"입력 상태",56,182,430);SendMessageW(statusTitle,WM_SETFONT,reinterpret_cast<WPARAM>(sectionFont),TRUE);
-    statusLabel=label(window,L"입력 상태 확인 중",56,214,440,22);ui::secondary(statusLabel);
+    statusLabel=control(window,L"STATIC",L"입력 상태 확인 중",0,56,214,440,22,123);ui::secondary(statusLabel);
     button(window,L"Atypoi 입력기 켜기",510,188,178,idActivate);
     auto inputTitle=label(window,L"입력 방식",56,278,350);SendMessageW(inputTitle,WM_SETFONT,reinterpret_cast<WPARAM>(sectionFont),TRUE);
     ui::secondary(label(window,L"입력 모드",56,315,280));ui::secondary(label(window,L"후보 전환 단축키",374,315,300));
@@ -250,7 +255,17 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_TIMER) {
         InterlockedExchange(&state->heartbeat,static_cast<LONG>(GetTickCount()));
         DWORD pid=0;auto active=GetForegroundWindow();GetWindowThreadProcessId(active,&pid);
-        if(pid&&pid!=GetCurrentProcessId()){auto path=processPath(pid);if(!path.empty()&&fileName(path)!=L"explorer.exe")foregroundPath=path;}
+        if(pid&&pid!=GetCurrentProcessId()){
+            auto path=processPath(pid);
+            if(!path.empty()&&fileName(path)!=L"explorer.exe"){
+                foregroundPath=path;
+                if(!demoMode&&(pid!=lastHostPid||GetTickCount()-hostProbeTick>3000)){
+                    auto state=host::inspect(pid,installedIme);
+                    if(state!=host::InputService::Unknown||pid!=lastHostPid)outdatedHost=state==host::InputService::Outdated;
+                    lastHostPid=pid;hostProbeTick=GetTickCount();
+                }
+            }
+        }
         tray();return 0;
     }
     if(message==WM_COMMAND) {
@@ -294,6 +309,7 @@ int WINAPI wWinMain(HINSTANCE app,HINSTANCE,LPWSTR,int) {
     if(args==L"--startup-off")return setStartup(false)?0:1;
     if(args==L"--quit"){if(auto window=FindWindowW(appClass,nullptr))PostMessageW(window,WM_COMMAND,idExit,0);return 0;}
     demoMode=args.find(L"--demo")!=std::wstring::npos;
+    auto executable=modulePath();installedIme=executable.substr(0,executable.find_last_of(L"\\/"))+L"\\Atypoi.IME.dll";
     mutex=CreateMutexW(nullptr,TRUE,objectName(L"Tray").c_str());
     if(!mutex)return 1;
     if(GetLastError()==ERROR_ALREADY_EXISTS){if(auto window=FindWindowW(appClass,nullptr)){ShowWindow(window,SW_SHOW);SetForegroundWindow(window);}CloseHandle(mutex);return 0;}

@@ -49,6 +49,17 @@ wchar_t jamo(char c) {
     return c>='a' && c<='z' ? layout[c-'a'] : 0;
 }
 bool isSyllable(wchar_t c) { return c>=0xac00 && c<=0xd7a3; }
+bool hasOrdinaryCapital(std::string_view keys) {return std::any_of(keys.begin(),keys.end(),[](char c){return c>='A'&&c<='Z'&&std::string_view("QWERTOP").find(c)==std::string_view::npos;});}
+bool koreanCase(std::string_view keys) {
+    bool shiftedRun=false;
+    for(char c:keys) {
+        if(c>='A'&&c<='Z') {
+            if(std::string_view("QWERTOP").find(c)!=std::string_view::npos)shiftedRun=true;
+            else if(!shiftedRun)return false;
+        } else shiftedRun=false;
+    }
+    return true;
+}
 std::string lower(std::string_view text) { std::string s(text); for(char& c:s) if(c>='A' && c<='Z') c+=32; return s; }
 template<class F> void rows(std::string_view data,F fn) {
     std::istringstream stream{std::string(data)}; std::string row;
@@ -142,17 +153,21 @@ Decision Engine::decide(std::string_view keys,std::optional<Language> previous,b
     Decision e{Language::English,fromUtf8(keys),0}; if(keys.empty()) return e;
     if(!std::all_of(keys.begin(),keys.end(),[](char c){return jamo(c)!=0;})) return e;
     if(auto m=mixed(keys)) return {Language::Mixed,*m,2.0};
-    for(char c:keys) if(c>='A'&&c<='Z' && std::string_view("QWERTOP").find(c)==std::string_view::npos) return e;
+    // Shift held after ㄲ/ㅆ also affects ordinary Latin keys (e.g. R+N for 뀌).
+    // Those keys have the same Korean jamo; preserve the original case for English.
+    if(!koreanCase(keys)||(hasOrdinaryCapital(keys)&&(knownEnglish(keys)||std::all_of(keys.begin(),keys.end(),[](char c){return c>='A'&&c<='Z';}))))return e;
     auto composed=compose(keys).text; double k=0; size_t stray=0;
     bool chat=composed.size()>=2 && std::all_of(composed.begin(),composed.end(),[](wchar_t c){return std::wstring_view(L"ㅋㅎㅠㅜㄷㅇㄱㅅㅂㄴ").find(c)!=std::wstring_view::npos;});
     for(auto c:composed) { if(isSyllable(c)) { auto it=syllables_.find(c); k+=it==syllables_.end()?-11:it->second; } else { k+=chat?-4:-13; ++stray; } }
     k/=static_cast<double>(keys.size()); bool knownK=korean_.contains(composed);
     if(knownK) k=std::max(k,composed.size()>=2?-1.4:-2.0);
     double en=englishScore(keys); bool knownE=knownEnglish(keys);
-    // Shift+R/T at a valid syllable end is an explicit two-set final (ㄲ/ㅆ).
-    // Do not let the previous English word override that deliberate input.
+    // A shifted final remains evidence after a following Korean ending is typed.
+    // Keep dictionary English casing protected, but don't bias an unknown token
+    // back to English just because its ㄲ/ㅆ is now inside the completed word.
     bool shiftedFinal=(keys.back()=='R'||keys.back()=='T')&&!composed.empty()&&isSyllable(composed.back());
-    if(previous) { if(*previous==Language::English) en+=shiftedFinal?0.0:knownK?0.2:0.8; else k+=knownE?0.2:0.8; }
+    bool shiftedKorean=!stray&&!knownE&&keys.find_first_of("QWERTOP")!=std::string_view::npos;
+    if(previous) { if(*previous==Language::English) en+=(shiftedFinal||shiftedKorean)?0.0:knownK?0.2:0.8; else k+=knownE?0.2:0.8; }
     double gap=k-en; double threshold=strict?1.4:0.15;
     if(chat && !knownE && !strict) return {Language::Korean,composed,2.0};
     if(!stray && gap>threshold) return {Language::Korean,composed,gap};
@@ -170,7 +185,7 @@ bool Session::append(char c,Mode mode,bool strict) {
     if(keys_.size()>=maxKeys) return false;
     bool wasKorean=display_.language==Language::Korean;
     keys_.push_back(c); deletingEarlierSyllable_=false; refresh(mode,strict);
-    bool koreanKey=c<'A'||c>'Z'||std::string_view("QWERTOP").find(c)!=std::string_view::npos;
+    bool koreanKey=koreanCase(keys_);
     if(mode==Mode::Auto&&!forced_&&wasKorean&&display_.language==Language::English&&koreanKey&&!engine_->knownEnglish(keys_)) {
         auto text=compose(keys_).text;
         // An established Korean word may end with the next syllable's initial.

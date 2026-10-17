@@ -131,7 +131,7 @@ void runWorker() {
         if(SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles,nullptr,CLSCTX_INPROC_SERVER,__uuidof(ITfInputProcessorProfiles),reinterpret_cast<void**>(profiles.put()))))profiles->EnableLanguageProfile(serviceId,languageId,profileId,TRUE);
         if(SendMessageW(runNow,BM_GETCHECK,0,0)==BST_CHECKED)launch(executable,L"");
     }
-    MessageBoxW(window,uninstalling?(result==3010?L"제거했습니다. 사용 중인 입력기 파일은 재시작 후 삭제됩니다.":L"Atypoi를 제거했습니다."):L"설치했습니다. Win + Space에서 Atypoi를 선택하세요.\n목록에 없으면 로그아웃 후 다시 로그인하세요.\n설정에서 사용할 앱을 추가할 수 있습니다.\n업데이트한 경우 입력 중인 앱을 다시 여세요.",L"Atypoi",MB_OK|MB_ICONINFORMATION);DestroyWindow(window);
+    MessageBoxW(window,uninstalling?(result==3010?L"제거했습니다. 사용 중인 입력기 파일은 재시작 후 삭제됩니다.":L"Atypoi를 제거했습니다."):L"설치했습니다. Win + Space에서 Atypoi를 선택하세요.\n목록에 없으면 로그아웃 후 다시 로그인하세요.\n업데이트한 경우 Chrome·메신저 등을 완전히 종료 후 다시 실행하세요.\n열린 앱에는 이전 입력기가 남아 있을 수 있습니다.",L"Atypoi",MB_OK|MB_ICONINFORMATION);DestroyWindow(window);
 }
 LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
     if(msg==WM_CTLCOLORSTATIC||msg==WM_CTLCOLORBTN)return atypoi::ui::color(w,l);
