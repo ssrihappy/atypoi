@@ -5,6 +5,7 @@ Set-Location -LiteralPath $projectRoot
 if (-not $Toolchain) { $Toolchain = Join-Path $projectRoot '.tools\llvm-mingw-20261006-ucrt-x86_64' }
 $compiler = Join-Path $Toolchain 'bin\x86_64-w64-mingw32-clang++.exe'
 $resourceCompiler = Join-Path $Toolchain 'bin\x86_64-w64-mingw32-windres.exe'
+if ($CertificateThumbprint -and $TimestampUrl -notmatch '^https://[^\s"<>]+$') { throw 'Signed packages require an HTTPS RFC3161 TimestampUrl.' }
 function Sign-Artifact([string]$Path) {
     $signArgs = @('sign','/sha1',$CertificateThumbprint,'/fd','SHA256')
     if ($TimestampUrl) { $signArgs += @('/tr',$TimestampUrl,'/td','SHA256') }
@@ -27,6 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Setup build failed' }
 if ($CertificateThumbprint) { Sign-Artifact 'dist\Atypoi.Setup.exe' }
 $verify = Start-Process -FilePath (Join-Path $projectRoot 'dist\Atypoi.Setup.exe') -ArgumentList '--verify-payload' -WindowStyle Hidden -PassThru -Wait
 if ($verify.ExitCode -ne 0) { throw 'Installer embedded payload validation failed' }
+& "$PSScriptRoot\verify-signatures.ps1" -RequireTrustedSignatures:([bool]$CertificateThumbprint) | Out-Null
 Get-ChildItem dist\Atypoi* -File | Get-FileHash -Algorithm SHA256 | Select-Object @{N='File';E={Split-Path -Leaf $_.Path}},Hash | ConvertTo-Json | Set-Content -LiteralPath dist\SHA256.json -Encoding UTF8
 Get-ChildItem data\*.txt -File | Get-FileHash -Algorithm SHA256 | Select-Object @{N='File';E={Split-Path -Leaf $_.Path}},Hash | ConvertTo-Json | Set-Content -LiteralPath dist\ModelHashes.json -Encoding UTF8
 Write-Host 'Installer ready: dist\Atypoi.Setup.exe'

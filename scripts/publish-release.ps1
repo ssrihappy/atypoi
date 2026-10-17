@@ -5,6 +5,7 @@ Set-Location -LiteralPath $projectRoot
 $source = [IO.File]::ReadAllText((Join-Path $projectRoot 'src\win\platform.h'))
 $version = [regex]::Match($source,'version\[\]=L"([^"]+)"').Groups[1].Value
 if ($version -notmatch '^\d+\.\d+\.\d+$' -or $Tag -cne "v$version") { throw 'Release tag must match the stable source version.' }
+$signature = & "$PSScriptRoot\verify-signatures.ps1" -RequireTrustedSignatures:($env:ATYPOI_REQUIRE_SIGNED_RELEASE -eq 'true')
 $existing = & gh release list --repo ssrihappy/atypoi --limit 100 --json tagName
 if ($LASTEXITCODE -ne 0) { throw 'Could not check existing releases.' }
 if (($existing | ConvertFrom-Json).tagName -ccontains $Tag) { throw 'Release already exists; published assets are immutable. Use a new version.' }
@@ -22,8 +23,10 @@ Windows x64 · Atypoi $version
 - 트레이 메뉴의 자동 업데이트 확인을 끄거나 설정의 업데이트 버튼으로 수동 확인할 수 있습니다.
 - GitHub 링크 배경을 설정 창과 자연스럽게 연결했습니다.
 
-설치 파일은 게시자 서명이 없습니다. 앱은 공식 버전별 GitHub 주소와 SHA256을 확인하며 설치 전 동의를 받습니다. 업데이트 후 입력하던 앱을 완전히 종료하고 다시 실행하세요.
+$(if($signature.Signed){'앱·입력기·설치 파일의 신뢰된 게시자 서명과 타임스탬프를 검증했습니다.'}else{'설치 파일은 게시자 서명이 없습니다.'}) 앱은 공식 버전별 GitHub 주소와 SHA256을 확인하며 설치 전 동의를 받습니다. 업데이트 후 입력하던 앱을 완전히 종료하고 다시 실행하세요.
 이전 0.1.5-dev 이하는 자동 업데이트 주소가 없으므로 이번 설치 파일을 한 번 직접 실행해야 합니다.
+
+[Code signing policy](https://github.com/ssrihappy/atypoi/blob/main/docs/CODE-SIGNING.md)
 "@
 New-Item -ItemType Directory -Force build | Out-Null
 [IO.File]::WriteAllText((Join-Path $projectRoot 'build\release-notes.md'),$notes,[Text.UTF8Encoding]::new($false))

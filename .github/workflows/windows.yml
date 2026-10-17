@@ -48,4 +48,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
+          ATYPOI_REQUIRE_SIGNED_RELEASE: ${{ vars.REQUIRE_SIGNED_RELEASE }}
         run: ./scripts/publish-release.ps1 -Tag $env:RELEASE_TAG
