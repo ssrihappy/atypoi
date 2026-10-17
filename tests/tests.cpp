@@ -107,10 +107,29 @@ int wmain(){
         Engine engine(file("data/english_words.txt"),file("data/korean_words.txt"),file("data/korean_syllables.txt"));check(engine.ready(),"full dictionaries loaded");
         pastTenseRegression(engine);
         check(host::inspect(0,L"unused")==host::InputService::Unknown,"invalid host inspection is unknown");
+        host::RestartNotices notices;
+        check(!notices.observe(0,host::InputService::Outdated),"invalid process does not generate a restart notice");
+        check(notices.observe(101,host::InputService::Outdated),"old input service generates a restart notice");
+        check(!notices.observe(101,host::InputService::Outdated),"repeated old-host polling does not spam notices");
+        check(!notices.observe(101,host::InputService::Unknown)&&!notices.observe(101,host::InputService::Outdated),"temporary inspection failure retains notice history");
+        check(notices.observe(102,host::InputService::Outdated)&&!notices.observe(101,host::InputService::Outdated),"switching apps preserves per-host notice history");
+        check(!notices.observe(101,host::InputService::Current)&&notices.observe(101,host::InputService::Outdated),"recovered host can report a later stale module");
+        check(!notices.observe(101,host::InputService::NotLoaded)&&notices.observe(101,host::InputService::Outdated),"unloaded host clears stale notice history");
         CreateDirectoryW(L"build\\host-version",nullptr);check(CopyFileW(L"build\\Atypoi.TestIME.dll",L"build\\host-version\\Atypoi.IME.dll",FALSE),"prepare isolated host-version module");
         auto hostDll=LoadLibraryW(L"build\\host-version\\Atypoi.IME.dll");check(hostDll!=nullptr,"load isolated host-version module");
         if(hostDll){wchar_t loaded[32768]{};GetModuleFileNameW(hostDll,loaded,32768);check(host::inspect(GetCurrentProcessId(),loaded)==host::InputService::Current,"detect matching installed input service");check(host::inspect(GetCurrentProcessId(),L"C:\\different-version\\Atypoi.IME.dll")==host::InputService::Outdated,"detect previously loaded input service");FreeLibrary(hostDll);}
         DeleteFileW(L"build\\host-version\\Atypoi.IME.dll");RemoveDirectoryW(L"build\\host-version");
+        CreateDirectoryW(L"build\\host-old",nullptr);CreateDirectoryW(L"build\\host-new",nullptr);
+        check(CopyFileW(L"build\\Atypoi.TestIME.dll",L"build\\host-old\\Atypoi.IME.dll",FALSE)&&CopyFileW(L"build\\Atypoi.TestIME.dll",L"build\\host-new\\Atypoi.IME.dll",FALSE),"prepare coexisting input service modules");
+        auto oldModule=LoadLibraryW(L"build\\host-old\\Atypoi.IME.dll"),newModule=LoadLibraryW(L"build\\host-new\\Atypoi.IME.dll");
+        check(oldModule&&newModule&&oldModule!=newModule,"map both host input service versions");
+        if(oldModule&&newModule){
+            wchar_t oldPath[32768]{},newPath[32768]{};GetModuleFileNameW(oldModule,oldPath,32768);GetModuleFileNameW(newModule,newPath,32768);
+            check(host::inspect(GetCurrentProcessId(),oldPath)==host::InputService::Outdated,"later stale module is not hidden by first current module");
+            check(host::inspect(GetCurrentProcessId(),newPath)==host::InputService::Outdated,"earlier stale module is detected alongside current module");
+        }
+        if(oldModule)FreeLibrary(oldModule);if(newModule)FreeLibrary(newModule);
+        DeleteFileW(L"build\\host-old\\Atypoi.IME.dll");DeleteFileW(L"build\\host-new\\Atypoi.IME.dll");RemoveDirectoryW(L"build\\host-old");RemoveDirectoryW(L"build\\host-new");
         check(update::sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","SHA256 standard test vector");
         auto manifest=update::parse("version=0.2.0\nurl=https://example.com/setup.exe\nsha256="+std::string(64,'a')+"\n");check(manifest.version==L"0.2.0","update manifest parser");
         check(update::versionParts(L"0.2.0")>update::versionParts(L"0.1.0-dev"),"update version ordering");

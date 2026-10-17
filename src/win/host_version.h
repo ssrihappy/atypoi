@@ -12,10 +12,25 @@ inline InputService inspect(DWORD pid,const std::wstring& expected) {
     MODULEENTRY32W entry{};entry.dwSize=sizeof entry;InputService result=InputService::NotLoaded;
     if(Module32FirstW(snapshot,&entry))do {
         if(lowerPath(entry.szModule)==L"atypoi.ime.dll"){
-            result=lowerPath(entry.szExePath)==lowerPath(expected)?InputService::Current:InputService::Outdated;break;
+            // A host can keep an old module mapped after also loading the new one.
+            // Do not let enumeration order hide the restart requirement.
+            if(lowerPath(entry.szExePath)!=lowerPath(expected)){result=InputService::Outdated;break;}
+            result=InputService::Current;
         }
     }while(Module32NextW(snapshot,&entry));
     else result=InputService::Unknown;
     CloseHandle(snapshot);return result;
 }
+class RestartNotices {
+    std::vector<DWORD> shown_;
+public:
+    bool observe(DWORD pid,InputService state){
+        if(!pid||state==InputService::Unknown)return false;
+        auto found=std::find(shown_.begin(),shown_.end(),pid);
+        if(state!=InputService::Outdated){if(found!=shown_.end())shown_.erase(found);return false;}
+        if(found!=shown_.end())return false;
+        if(shown_.size()==32)shown_.erase(shown_.begin());
+        shown_.push_back(pid);return true;
+    }
+};
 }

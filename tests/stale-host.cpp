@@ -1,0 +1,3 @@
+#include <windows.h>
+LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){if(m==WM_DESTROY){PostQuitMessage(0);return 0;}return DefWindowProcW(h,m,w,l);}
+int WINAPI wWinMain(HINSTANCE i,HINSTANCE,PWSTR,int){auto dll=LoadLibraryW(L"build\\stale-fixture\\Atypoi.IME.dll");if(!dll)return 2;WNDCLASSW c{};c.hInstance=i;c.lpfnWndProc=proc;c.lpszClassName=L"Atypoi.StaleFixture";c.hbrBackground=static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));RegisterClassW(&c);auto h=CreateWindowW(c.lpszClassName,L"Atypoi restart notice verification",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,400,200,nullptr,nullptr,i,nullptr);ShowWindow(h,SW_SHOW);MSG m;while(GetMessageW(&m,nullptr,0,0)>0){TranslateMessage(&m);DispatchMessageW(&m);}FreeLibrary(dll);return 0;}

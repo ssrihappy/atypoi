@@ -31,6 +31,9 @@ std::wstring foregroundPath;
 std::wstring installedIme;
 DWORD lastHostPid=0,hostProbeTick=0;
 bool outdatedHost=false;
+host::RestartNotices restartNotices;
+enum class Notice {Update,Restart};
+Notice latestNotice=Notice::Update;
 UINT taskbarCreated;
 HICON trayIcon=nullptr;
 LONG lastStatus=-1;
@@ -117,7 +120,9 @@ void tray(bool add=false) {
     }
     if(outdatedHost&&(foreground==lastHostPid||GetForegroundWindow()==mainWindow))status=8;
     if(config.mode==3)status=4;
-    auto message=statusText(status);if(text(statusLabel)!=message)SetWindowTextW(statusLabel,message.c_str());
+    auto message=statusText(status);
+    if(status==8&&!foregroundPath.empty())message=fileName(foregroundPath)+L" · 재시작 필요 (이전 입력기)";
+    if(text(statusLabel)!=message)SetWindowTextW(statusLabel,message.c_str());
     if(!add && lastStatus==status)return;lastStatus=status;
     auto next=makeIcon(status);
     NOTIFYICONDATAW data{};data.cbSize=sizeof data;data.hWnd=mainWindow;data.uID=1;data.uFlags=NIF_ICON|NIF_MESSAGE|NIF_TIP;data.uCallbackMessage=trayMessage;data.hIcon=next;wcsncpy_s(data.szTip,(L"Atypoi · "+message).c_str(),_TRUNCATE);
@@ -125,7 +130,12 @@ void tray(bool add=false) {
     if(add){data.uVersion=NOTIFYICON_VERSION_4;Shell_NotifyIconW(NIM_SETVERSION,&data);}
     if(trayIcon)DestroyIcon(trayIcon);trayIcon=next;
 }
-void showSettings(){ShowWindow(mainWindow,SW_SHOWNORMAL);SetForegroundWindow(mainWindow);}
+void showSettings(){
+    ShowWindow(mainWindow,SW_SHOWNORMAL);
+    // The first call can honor the launcher's SW_HIDE instead of our command.
+    if(!IsWindowVisible(mainWindow))ShowWindow(mainWindow,SW_SHOWNORMAL);
+    SetForegroundWindow(mainWindow);
+}
 void scaleWindow(HWND window,WPARAM dpi,LPARAM rectPointer) {
     UINT old=static_cast<UINT>(reinterpret_cast<UINT_PTR>(GetPropW(window,L"Atypoi.Dpi")));if(!old)old=96;
     UINT next=HIWORD(dpi);if(!next)next=96;
@@ -248,7 +258,7 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
         if(backgroundUpdate){
             if(!updateResult.path.empty()){
                 NOTIFYICONDATAW notice{};notice.cbSize=sizeof notice;notice.hWnd=window;notice.uID=1;notice.uFlags=NIF_INFO;notice.dwInfoFlags=NIIF_INFO;
-                wcscpy_s(notice.szInfoTitle,L"Atypoi 업데이트 준비 완료");wcscpy_s(notice.szInfo,L"새 버전을 다운로드했습니다. 알림 또는 설정의 업데이트 버튼을 눌러 설치하세요.");Shell_NotifyIconW(NIM_MODIFY,&notice);
+                wcscpy_s(notice.szInfoTitle,L"Atypoi 업데이트 준비 완료");wcscpy_s(notice.szInfo,L"새 버전을 다운로드했습니다. 알림 또는 설정의 업데이트 버튼을 눌러 설치하세요.");latestNotice=Notice::Update;Shell_NotifyIconW(NIM_MODIFY,&notice);
             }
             return 0;
         }
@@ -263,7 +273,7 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_CREATE){mainWindow=window;SetPropW(window,L"Atypoi.Dpi",reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(GetDpiForWindow(window))));createSettings(window);SetTimer(window,1,500,nullptr);return 0;}
     if(message==taskbarCreated){tray(true);return 0;}
     if(message==trayMessage) {
-        auto action=LOWORD(l);if(action==NIN_BALLOONUSERCLICK)updateCheck();else if(action==WM_CONTEXTMENU||action==WM_RBUTTONUP)menu();else if(action==NIN_SELECT||action==NIN_KEYSELECT||action==WM_LBUTTONDBLCLK)showSettings();return 0;
+        auto action=LOWORD(l);if(action==NIN_BALLOONUSERCLICK){if(latestNotice==Notice::Restart)showSettings();else updateCheck();}else if(action==WM_CONTEXTMENU||action==WM_RBUTTONUP)menu();else if(action==NIN_SELECT||action==NIN_KEYSELECT||action==WM_LBUTTONDBLCLK)showSettings();return 0;
     }
     if(message==WM_TIMER) {
         if(!demoMode&&automaticUpdates&&GetTickCount64()>=nextUpdateCheck){nextUpdateCheck=GetTickCount64()+24ULL*60*60*1000;updateCheck(true);}
@@ -276,6 +286,12 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
                 if(!demoMode&&(pid!=lastHostPid||GetTickCount()-hostProbeTick>3000)){
                     auto state=host::inspect(pid,installedIme);
                     if(state!=host::InputService::Unknown||pid!=lastHostPid)outdatedHost=state==host::InputService::Outdated;
+                    if(restartNotices.observe(pid,state)){
+                        NOTIFYICONDATAW notice{};notice.cbSize=sizeof notice;notice.hWnd=window;notice.uID=1;notice.uFlags=NIF_INFO;notice.dwInfoFlags=NIIF_WARNING;
+                        wcscpy_s(notice.szInfoTitle,L"입력하던 앱을 다시 시작해 주세요");
+                        auto message=fileName(path)+L"에 이전 Atypoi 입력기가 남아 있습니다. 작업을 저장한 뒤 앱을 트레이에서도 완전히 종료하고 다시 실행하세요.";
+                        wcsncpy_s(notice.szInfo,message.c_str(),_TRUNCATE);latestNotice=Notice::Restart;Shell_NotifyIconW(NIM_MODIFY,&notice);
+                    }
                     lastHostPid=pid;hostProbeTick=GetTickCount();
                 }
             }
