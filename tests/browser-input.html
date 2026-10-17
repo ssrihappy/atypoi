@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Atypoi Windows keyboard verification</title>
+<style>body{font:20px system-ui;margin:48px;max-width:900px}label{display:block;margin-top:24px}textarea,input,[contenteditable]{display:block;width:100%;font:26px system-ui;box-sizing:border-box;padding:12px;border:1px solid #777}textarea{height:140px}[contenteditable]{min-height:80px}</style>
+<h1>Atypoi Windows keyboard verification</h1>
+<p>Physical Windows key events only. This local page sends no data.</p>
+<label>Plain text<textarea id="plain" autofocus></textarea></label>
+<label>Second field<input id="second"></label>
+<label>Password — synthetic sample only<input id="password" type="password" autocomplete="off"></label>
+<output id="passwordStatus" aria-label="Synthetic password result">Not tested</output>
+<label>Email<input id="email" type="email"></label>
+<label>Rich text<div id="rich" contenteditable="true" role="textbox" aria-label="Rich text"></div></label>
+<script>document.getElementById('password').addEventListener('input', e => {document.getElementById('passwordStatus').textContent = e.target.value === 'dkssud' ? 'PASS: synthetic password unchanged' : 'Pending synthetic password check';});</script>

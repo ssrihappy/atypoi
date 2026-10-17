@@ -1,0 +1,3 @@
+101 RCDATA "../data/english_words.txt"
+102 RCDATA "../data/korean_words.txt"
+103 RCDATA "../data/korean_syllables.txt"

@@ -1,0 +1,7 @@
+#include <windows.h>
+101 ICON "atypoi.ico"
+1 RT_MANIFEST "app.manifest"
+#include "version.rc"
+201 RCDATA "../dist/Atypoi.exe"
+202 RCDATA "../dist/Atypoi.IME.dll"
+203 RCDATA "../build/ThirdPartyNotices.txt"

@@ -1,0 +1,6 @@
+LIBRARY Atypoi.IME
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow
+    DllRegisterServer
+    DllUnregisterServer

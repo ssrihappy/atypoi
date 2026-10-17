@@ -1,0 +1,5 @@
+#include <windows.h>
+#define ATYPOI_FILETYPE VFT_DLL
+#include "version.rc"
+#include "models.rc"
+101 ICON "atypoi.ico"

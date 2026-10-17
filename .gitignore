@@ -1,0 +1,17 @@
+.tools/
+build/
+dist/
+publish/
+*.user
+*.pdb
+*.log
+.vs/
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
