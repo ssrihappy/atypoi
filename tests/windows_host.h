@@ -41,7 +41,8 @@ public:
 class TestStore final:public ITextStoreACP {
     LONG refs_=1;Ptr<ITextStoreACPSink> sink_;bool locked_=false;
 public:
-    std::wstring text;LONG start=0,end=0;bool readOnly=false,failSelection=false;
+    std::wstring text;LONG start=0,end=0;bool readOnly=false,failSelection=false,emptyInputScope=false,pendingInputScope=false;
+    inline static constexpr GUID inputScope={0x1713dd5a,0x68e7,0x4a5b,{0x9a,0xf6,0x59,0x2a,0x59,0x5c,0x77,0x8d}};
     HWND window=nullptr;
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out) override{if(!out)return E_POINTER;*out=nullptr;if(id!=IID_IUnknown&&id!=__uuidof(ITextStoreACP))return E_NOINTERFACE;*out=static_cast<ITextStoreACP*>(this);AddRef();return S_OK;}
     ULONG STDMETHODCALLTYPE AddRef() override{return InterlockedIncrement(&refs_);}
@@ -68,14 +69,16 @@ public:
     HRESULT STDMETHODCALLTYPE InsertEmbedded(DWORD,LONG,LONG,IDataObject*,TS_TEXTCHANGE*) override{return E_NOTIMPL;}
     HRESULT STDMETHODCALLTYPE InsertTextAtSelection(DWORD flags,const WCHAR* value,ULONG count,LONG* a,LONG* b,TS_TEXTCHANGE* change) override {
         LONG oldStart=start,oldEnd=end;if(a)*a=start;if(b)*b=end;
-        if(flags&TS_IAS_QUERYONLY)return S_OK;return SetText(0,oldStart,oldEnd,value,count,change);
+        if(flags&TS_IAS_QUERYONLY)return S_OK;
+        auto hr=SetText(0,oldStart,oldEnd,value,count,change);
+        if(SUCCEEDED(hr)&&b)*b=oldStart+static_cast<LONG>(count);return hr;
     }
     HRESULT STDMETHODCALLTYPE InsertEmbeddedAtSelection(DWORD,IDataObject*,LONG*,LONG*,TS_TEXTCHANGE*) override{return E_NOTIMPL;}
-    HRESULT STDMETHODCALLTYPE RequestSupportedAttrs(DWORD,ULONG,const TS_ATTRID*) override{return S_OK;}
-    HRESULT STDMETHODCALLTYPE RequestAttrsAtPosition(LONG,ULONG,const TS_ATTRID*,DWORD) override{return S_OK;}
+    HRESULT STDMETHODCALLTYPE RequestSupportedAttrs(DWORD,ULONG count,const TS_ATTRID* ids) override{pendingInputScope=emptyInputScope&&(!count||std::any_of(ids,ids+count,[](const GUID& id){return IsEqualGUID(id,inputScope);}));return S_OK;}
+    HRESULT STDMETHODCALLTYPE RequestAttrsAtPosition(LONG,ULONG count,const TS_ATTRID* ids,DWORD) override{return RequestSupportedAttrs(0,count,ids);}
     HRESULT STDMETHODCALLTYPE RequestAttrsTransitioningAtPosition(LONG,ULONG,const TS_ATTRID*,DWORD) override{return S_OK;}
     HRESULT STDMETHODCALLTYPE FindNextAttrTransition(LONG,LONG halt,ULONG,const TS_ATTRID*,DWORD,LONG* next,BOOL* found,LONG* offset) override{*next=halt;*found=FALSE;*offset=0;return S_OK;}
-    HRESULT STDMETHODCALLTYPE RetrieveRequestedAttrs(ULONG,TS_ATTRVAL*,ULONG* fetched) override{*fetched=0;return S_OK;}
+    HRESULT STDMETHODCALLTYPE RetrieveRequestedAttrs(ULONG count,TS_ATTRVAL* values,ULONG* fetched) override{*fetched=0;if(count&&pendingInputScope){values[0].idAttr=inputScope;values[0].dwOverlapId=0;VariantInit(&values[0].varValue);*fetched=1;}pendingInputScope=false;return S_OK;}
     HRESULT STDMETHODCALLTYPE GetEndACP(LONG* endValue) override{*endValue=static_cast<LONG>(text.size());return S_OK;}
     HRESULT STDMETHODCALLTYPE GetActiveView(TsViewCookie* view) override{*view=1;return S_OK;}
     HRESULT STDMETHODCALLTYPE GetACPFromPoint(TsViewCookie,const POINT*,DWORD,LONG* result) override{*result=start;return S_OK;}

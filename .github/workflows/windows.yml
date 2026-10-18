@@ -20,6 +20,11 @@ jobs:
       - name: Package unsigned development installer
         shell: powershell
         run: ./scripts/package.ps1
+      - name: Verify publication contents and binary metadata
+        shell: powershell
+        run: |
+          ./scripts/audit-publication.ps1 -CheckBinaries
+          ./scripts/verify-signatures.ps1
       - name: Export source archive
         shell: powershell
         run: ./scripts/export-source.ps1

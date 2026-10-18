@@ -1,4 +1,5 @@
 #include "../src/win/platform.h"
+#include "../src/win/input_profile.h"
 #include <cstdio>
 using namespace atypoi::win;
 int wmain(int argc,wchar_t** argv) {
@@ -19,7 +20,7 @@ int wmain(int argc,wchar_t** argv) {
   printf("ActivateDefault %08lx\n",hr);
  }
  if(argc>1 && std::wstring(argv[1])==L"activate") {
-  hr=mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR,languageId,serviceId,profileId,nullptr,0x20000000 /* TF_IPPMF_FORSESSION */);
+  hr=activateInputProfile()?S_OK:E_FAIL;
   printf("ActivateProfile %08lx\n",hr);
  }
  TF_INPUTPROCESSORPROFILE active{};
@@ -28,6 +29,8 @@ int wmain(int argc,wchar_t** argv) {
  Ptr<IEnumTfInputProcessorProfiles> profiles;
  hr=mgr->EnumProfiles(languageId,profiles.put());
  if(SUCCEEDED(hr)){TF_INPUTPROCESSORPROFILE p{};ULONG fetched=0;while(profiles->Next(1,&p,&fetched)==S_OK)wprintf(L"profile service=%ls profile=%ls flags=%lu hkl=%p\n",guidString(p.clsid).c_str(),guidString(p.guidProfile).c_str(),p.dwFlags,p.hkl);}
+ Ptr<ITfInputProcessorProfiles> enabledProfiles;
+ if(SUCCEEDED(query(mgr.get(),enabledProfiles))){BOOL primary=FALSE,legacy=FALSE;auto first=enabledProfiles->IsEnabledLanguageProfile(serviceId,languageId,profileId,&primary);auto old=enabledProfiles->IsEnabledLanguageProfile(serviceId,legacyLanguageId,profileId,&legacy);printf("Atypoi profiles: primary=%d legacy=%d hr=%08lx/%08lx\n",primary!=FALSE,legacy!=FALSE,first,old);}
  auto config=loadConfig();printf("config mode=%ld apps=%ld\n",config.mode,config.appCount);
  HANDLE mapping=OpenFileMappingW(FILE_MAP_READ,FALSE,objectName(L"State").c_str());
  if(mapping){auto s=static_cast<const Shared*>(MapViewOfFile(mapping,FILE_MAP_READ,0,0,sizeof(Shared)));if(s){printf("state alive=%d pid=%ld status=%ld tested=%ld handled=%ld stage=%ld hr=%08lx\n",alive(s),s->foregroundPid,s->status,s->testedKeys,s->handledKeys,s->diagnosticStage,s->diagnosticHr);printf("buffer=%ld bind=%ld term=%ld selection=%ld focusloss=%ld\n",s->bufferLength,s->bindings,s->terminations,s->selectionEnds,s->focusLosses);UnmapViewOfFile(s);}CloseHandle(mapping);}

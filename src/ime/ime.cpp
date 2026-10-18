@@ -1,4 +1,5 @@
 #include "../win/tsf_compat.h"
+#include "../win/accessible_input.h"
 #include <inputscope.h>
 #include <new>
 #include <functional>
@@ -71,6 +72,7 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
     std::wstring path_;
     std::array<bool,256> consumed_{};
     bool secure_=false,editing_=false,protectedToken_=false,applied_=false,fault_=false;
+    accessible::QtInput qtInput_;
     int fieldSupported_=-1;
     LONG modeSeen_=-1;
     DWORD lastInput_=0;
@@ -95,6 +97,7 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
         InterlockedExchange(&shared_->foregroundPid,static_cast<LONG>(pid));InterlockedExchange(&shared_->status,status);InterlockedExchange(&shared_->statusTick,static_cast<LONG>(GetTickCount()));
     }
     void tick() {
+        if(!editing_)qtInput_.update(GetFocus());
         connect();auto p=currentPolicy();
         if(p.mode==Mode::Paused||static_cast<LONG>(p.mode)!=modeSeen_) {finishAsync();if(session_)session_->reset();protectedToken_=false;modeSeen_=static_cast<LONG>(p.mode);}
         if(session_ && GetTickCount()-lastInput_>30000)session_->resetContext();
@@ -105,7 +108,7 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
         textCookie_=TF_INVALID_COOKIE;contextSource_.reset();context_.reset();
     }
     void bind(ITfContext* context) {
-        if(context_.get()==context)return;
+        if(sameObject(context_.get(),context))return;
         if(shared_)InterlockedIncrement(&shared_->bindings);
         finishAsync();unbind();context_=Ptr<ITfContext>(context);protectedToken_=false;
         if(session_)session_->reset();fault_=false;fieldSupported_=-1;
@@ -138,12 +141,16 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
         if(compartment(context,GUID_COMPARTMENT_KEYBOARD_DISABLED)||compartment(context,GUID_COMPARTMENT_EMPTYCONTEXT))return false;
         Ptr<ITfContextView> view;HWND hwnd=nullptr;
         if(SUCCEEDED(context->GetActiveView(view.put())))view->GetWnd(&hwnd);
-        bool nativeText=false;
+        bool nativeText=false,qtText=false;
         if(hwnd) {
             HWND focus=GetFocus();if(focus&&(focus==hwnd||IsChild(hwnd,focus)))hwnd=focus;
             wchar_t cls[128]{};GetClassNameW(hwnd,cls,128);std::wstring name=lowerPath(cls);
             nativeText=name==L"edit"||name.starts_with(L"richedit");
             if(nativeText&&(GetWindowLongPtrW(hwnd,GWL_STYLE)&ES_PASSWORD))return false;
+            if(accessible::qtWindow(name)){
+                qtText=qtInput_.permits(hwnd);
+                if(!qtText)return false;
+            }
         }
         TF_SELECTION selection{};ULONG count=0;
         stage(13);
@@ -159,18 +166,22 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
                 if(SUCCEEDED(query(value.punkVal,scope))) {
                     InputScope* scopes=nullptr;UINT n=0;
                     if(SUCCEEDED(scope->GetInputScopes(&scopes,&n))) {
+                        if((n&&!scopes)||n>128){CoTaskMemFree(scopes);VariantClear(&value);return false;}
                         stage(n?100+scopes[0]:16);
                         bool forbidden=false;
                         for(UINT i=0;i<n;++i) if(scopes[i]==IS_PASSWORD||scopes[i]==IS_EMAIL_SMTPEMAILADDRESS||scopes[i]==IS_URL||scopes[i]==IS_NUMBER||scopes[i]==IS_DIGITS||scopes[i]==IS_TELEPHONE_FULLTELEPHONENUMBER)forbidden=true;
-                        CoTaskMemFree(scopes);VariantClear(&value);return n>0?!forbidden:nativeText;
+                        CoTaskMemFree(scopes);VariantClear(&value);return n>0?!forbidden:nativeText||qtText;
                     }
                 }
                 VariantClear(&value);return false;
             }
+            if(qtText&&(FAILED(scopeHr)||value.vt!=VT_EMPTY)){VariantClear(&value);return false;}
             VariantClear(&value);
         }
-        // An absent scope is not proof that a custom control is safe to inspect.
-        return nativeText;
+        // Qt's IMM bridge can return VT_EMPTY for InputScope. Accept only an
+        // independently verified focused editable control; other custom hosts
+        // still require a scope. Explicit forbidden scopes above always win.
+        return nativeText||qtText;
     }
     HRESULT render(TfEditCookie cookie) {
         Ptr<ITfRange> range;
@@ -209,6 +220,16 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
     }
     bool modifiers() {return ((GetKeyState(VK_CONTROL)|GetKeyState(VK_MENU)|GetKeyState(VK_LWIN)|GetKeyState(VK_RWIN))&0x8000)!=0;}
     bool modifierKey(WPARAM key) {return key==VK_SHIFT||key==VK_CONTROL||key==VK_MENU||key==VK_LWIN||key==VK_RWIN||key==VK_LSHIFT||key==VK_RSHIFT||key==VK_LCONTROL||key==VK_RCONTROL||key==VK_LMENU||key==VK_RMENU;}
+    HRESULT insertCharacter(TfEditCookie cookie,wchar_t character,BOOL* eaten){
+        Ptr<ITfInsertAtSelection> insertion;auto hr=query(context_.get(),insertion);
+        if(FAILED(hr))return hr;
+        Ptr<ITfRange> inserted;hr=insertion->InsertTextAtSelection(cookie,0,&character,1,inserted.put());
+        if(FAILED(hr))return hr;
+        applied_=true;*eaten=TRUE;if(!inserted)return E_FAIL;
+        hr=inserted->Collapse(cookie,TF_ANCHOR_END);if(FAILED(hr))return hr;
+        TF_SELECTION selection{inserted.get(),{TF_AE_NONE,FALSE}};
+        return context_->SetSelection(cookie,1,&selection);
+    }
     HRESULT key(TfEditCookie cookie,ITfContext* context,WPARAM vk,LPARAM param,BOOL* eaten) {
         *eaten=FALSE;auto p=currentPolicy();
         fieldSupported_=safe(cookie,context)?1:0;
@@ -220,7 +241,7 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
         }
         if(vk==VK_BACK&&!session_->empty()) {session_->backspace(p.mode,p.strict);auto hr=render(cookie);*eaten=SUCCEEDED(hr);return hr;}
         if(vk==VK_RETURN) {bool had=!session_->empty();auto hr=finish(cookie);*eaten=SUCCEEDED(hr)&&had&&p.enter;protectedToken_=false;session_->resetContext();return hr;}
-        if(vk==VK_SPACE) {protectedToken_=false;return finish(cookie);}
+        if(vk==VK_SPACE) {protectedToken_=false;auto hr=finish(cookie);return FAILED(hr)?hr:insertCharacter(cookie,L' ',eaten);}
         char c=character(vk,param);
         if(protectedToken_)return S_OK;
         if(c && ((c>='a'&&c<='z')||(c>='A'&&c<='Z'))) {
@@ -239,7 +260,7 @@ class Service final:public ITfTextInputProcessorEx,public ITfKeyEventSink,public
                 }
                 protectedToken_=true;
             }
-            auto hr=finish(cookie);if(c=='.'||c=='!'||c=='?')session_->resetContext();return hr;
+            auto hr=finish(cookie);if(c=='.'||c=='!'||c=='?')session_->resetContext();return FAILED(hr)?hr:insertCharacter(cookie,static_cast<wchar_t>(c),eaten);
         }
         return finish(cookie);
     }
@@ -275,6 +296,7 @@ public:
         }catch(...){Deactivate();return E_FAIL;}
     }
     HRESULT STDMETHODCALLTYPE Deactivate() override {
+        qtInput_.reset();
         if(timer_){DestroyWindow(timer_);timer_=nullptr;}
         finishAsync();unbind();
         if(manager_) {
@@ -293,6 +315,7 @@ public:
         auto p=currentPolicy();if(!session_->empty()){*eaten=TRUE;return S_OK;}
         if(protectedToken_&&(vk==VK_SPACE||vk==VK_RETURN||vk==VK_ESCAPE||vk==VK_TAB||vk==VK_LEFT||vk==VK_RIGHT||modifiers())){*eaten=TRUE;return S_OK;}
         if(p.mode==Mode::Paused||p.mode==Mode::English||modifiers()||protectedToken_)return S_OK;
+        qtInput_.update(GetFocus());
         // Hosts such as Chromium suppress WM_CHAR once TestKeyDown accepts a key.
         // Reject unsupported fields here, before claiming the physical keystroke.
         bool supported=false;
@@ -305,6 +328,7 @@ public:
         if(shared_)InterlockedIncrement(&shared_->handledKeys);
         if(!eaten)return E_POINTER;*eaten=FALSE;if(!session_||modifierKey(vk))return S_OK;
         try {
+            qtInput_.update(GetFocus());
             bind(context);if(GetTickCount()-lastInput_>30000)session_->resetContext();lastInput_=GetTickCount();
             auto before=*session_;editing_=true;applied_=false;
             auto hr=request(context,client_,[&](TfEditCookie cookie){return key(cookie,context,vk,param,eaten);});editing_=false;
@@ -322,9 +346,9 @@ public:
     HRESULT STDMETHODCALLTYPE OnUninitDocumentMgr(ITfDocumentMgr*) override{return S_OK;}
     HRESULT STDMETHODCALLTYPE OnSetFocus(ITfDocumentMgr* doc,ITfDocumentMgr*) override {Ptr<ITfContext> context;if(doc)doc->GetTop(context.put());bind(context.get());return S_OK;}
     HRESULT STDMETHODCALLTYPE OnPushContext(ITfContext* context) override {bind(context);return S_OK;}
-    HRESULT STDMETHODCALLTYPE OnPopContext(ITfContext* context) override {if(context_.get()==context){finishAsync();unbind();if(session_)session_->reset();}return S_OK;}
+    HRESULT STDMETHODCALLTYPE OnPopContext(ITfContext* context) override {if(sameObject(context_.get(),context)){finishAsync();unbind();if(session_)session_->reset();}return S_OK;}
     HRESULT STDMETHODCALLTYPE OnEndEdit(ITfContext* context,TfEditCookie cookie,ITfEditRecord* record) override {
-        if(editing_||!composition_||context_.get()!=context)return S_OK;
+        if(editing_||!composition_||!sameObject(context_.get(),context))return S_OK;
         BOOL changed=FALSE;if(FAILED(record->GetSelectionStatus(&changed))||!changed)return S_OK;
         TF_SELECTION selection{};ULONG n=0;Ptr<ITfRange> range;
         if(SUCCEEDED(context->GetSelection(cookie,TF_DEFAULT_SELECTION,1,&selection,&n))&&n) {

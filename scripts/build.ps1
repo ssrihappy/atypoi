@@ -22,7 +22,7 @@ if ($UpdateFeed) {
     if ($UpdateFeed -notmatch '^https://[^\s"<>]+$') { throw 'UpdateFeed must be an HTTPS URL.' }
     $common += ('-DATYPOI_UPDATE_FEED=L"' + $UpdateFeed + '"')
 }
-$libs = @('-lole32','-loleaut32','-luuid','-ladvapi32','-lshell32','-luser32','-lgdi32','-lcomctl32','-lcomdlg32','-limm32','-lwinhttp','-lwintrust','-lcrypt32','-lbcrypt')
+$libs = @('-lole32','-loleaut32','-loleacc','-luuid','-ladvapi32','-lshell32','-luser32','-lgdi32','-lcomctl32','-lcomdlg32','-limm32','-lwinhttp','-lwintrust','-lcrypt32','-lbcrypt')
 & $compiler @common -shared src/core/engine.cpp src/ime/ime.cpp src/ime/exports.def build/ime.o @libs '-Wl,--no-insert-timestamp' -o dist/Atypoi.IME.dll
 if ($LASTEXITCODE -ne 0) { throw 'IME build failed' }
 & $compiler @common -municode -mwindows src/core/engine.cpp src/tray/main.cpp build/models.o build/app.o @libs '-Wl,--no-insert-timestamp' -o dist/Atypoi.exe

@@ -1,10 +1,10 @@
 # 입력 검증
 
-검증 대상은 Windows x64 개발 빌드입니다. 코어·TSF 컨텍스트 검사와 실제 데스크톱 키 입력 검사는 서로 구분합니다.
+검증 대상은 Windows x64 빌드입니다. 코어·TSF 컨텍스트 검사와 실제 데스크톱 키 입력 검사는 서로 구분합니다.
 
 ## 자동 검사
 
-`scripts/build.ps1`은 **23,899개 검사**를 실행합니다. 두벌식 한글 11,172개 음절, 무작위 조합, 혼합 조사, 후보 전환, 자모 삭제, 보호 정책, 실제 DLL의 COM·TSF 편집 세션을 검사합니다. 키 구독은 테스트용 어댑터를 사용하며 제품의 공유 메모리·사용자 설정과 분리합니다.
+`scripts/build.ps1`은 **23,978개 검사**를 실행합니다. 두벌식 한글 11,172개 음절, 무작위 조합, 혼합 조사, 후보 전환, 자모 삭제, 보호 정책, 실제 DLL의 COM·TSF 편집 세션을 검사합니다. 키 구독은 테스트용 어댑터를 사용하며 제품의 공유 메모리·사용자 설정과 분리합니다.
 
 과거형 어간 61개와 어미 8개를 결합한 **488개 조합**을 단독·영어 문맥 뒤에서 판정하고, 세션의 삭제·재입력·확정을 검사합니다. `만들었다·만들었어요·만들었습니다`, 단어 중간에 Shift 쌍자음이 있는 `깨끗했다`, 겹받침이 있는 `읽었다·앉았다·핥았다` 등을 포함합니다. 이 고정 회귀 집합을 독립 정확도 평가로 해석하지 않습니다.
 
@@ -37,9 +37,12 @@
 
 ## 재현
 
+0.1.7에는 실제 Windows TSF→IMM 경로를 쓰는 독립 편집기 시험을 추가했습니다. 설치·활성화한 새 프로필과 실행 중인 자동 모드 트레이가 필요합니다. 시험 프로세스 내부에서만 빌드 DLL의 COM 팩터리를 등록하며 시스템 DLL 경로를 바꾸지 않습니다. 프로필 선택은 시험 창 스레드에 한정하고, 사용자 세션의 입력기 선택·앱별 설정은 변경하지 않습니다. 가상 Qt 형태 창의 접근성 공급자는 포커스·역할·보호 상태만 제공하며 입력 내용 조회 여부를 검사합니다. **10개 실제 키 입력 검사**에서 기본 한글, Shift 쌍시옷, 삭제·재입력, 요청한 혼합 문장, 확정, 영어 대소문자·공백, 문장부호, 보호 필드 우회와 복귀를 확인했습니다. 실제 Qt 또는 카카오톡 전체 호환성 시험과 구분합니다.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 # 아래 명령은 설치된 Atypoi를 실행하고 선택한 상태에서 수행합니다.
+powershell -ExecutionPolicy Bypass -File scripts/test-imm-input.ps1
 powershell -ExecutionPolicy Bypass -File scripts/test-desktop-input.ps1
 powershell -ExecutionPolicy Bypass -File scripts/test-browser-input.ps1 -Launch
 powershell -ExecutionPolicy Bypass -File scripts/verify-installed-input.ps1

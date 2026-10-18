@@ -1,5 +1,6 @@
 #include "../src/win/tsf_compat.h"
 #include "windows_host.h"
+#include "accessible_host.h"
 #include "../src/win/update.h"
 #include "../src/win/host_version.h"
 #include <chrono>
@@ -96,6 +97,31 @@ void integration(ITfTextInputProcessorEx* service,ITfThreadMgr* manager,TfClient
     type("hello RoRmtgoTek");expectText(store->text,beforePast+L"만들었다 hello 깨끗했다","TSF shifted consonants inside past tense after English");
     press(VK_BACK);expectText(store->text,beforePast+L"만들었다 hello 깨끗했ㄷ","TSF past ending backspace");type("k ");
     auto beforeHeldShift=store->text;type("qkRNldjTek ");expectText(store->text,beforeHeldShift+L"바뀌었다 ","TSF ordinary key while Shift is held after doubled consonant");
+    {
+        press(VK_SPACE,' ');
+        auto savedStore=store;auto savedContext=context;auto previousFocus=GetFocus();
+        Ptr<TestAccessible> field(new TestAccessible,false);AccessibleWindowFixture fixture{field.get()};
+        WNDCLASSW cls{};cls.hInstance=GetModuleHandleW(nullptr);cls.lpfnWndProc=AccessibleWindowFixture::procedure;cls.lpszClassName=L"Qt6103QWindowIcon";RegisterClassW(&cls);
+        Ptr<TestStore> qtStore(new TestStore,false);qtStore->emptyInputScope=true;qtStore->window=CreateWindowW(cls.lpszClassName,L"",WS_POPUP,0,0,300,100,nullptr,nullptr,cls.hInstance,&fixture);SetFocus(qtStore->window);
+        Ptr<ITfDocumentMgr> qtDoc;manager->CreateDocumentMgr(qtDoc.put());Ptr<ITfContext> qtContext;TfEditCookie qtOwner=0;
+        check(SUCCEEDED(qtDoc->CreateContext(client,0,static_cast<ITextStoreACP*>(qtStore.get()),qtContext.put(),&qtOwner)),"Qt-style host has a real TSF context without InputScope");
+        qtDoc->Push(qtContext.get());manager->SetFocus(qtDoc.get());store=qtStore;context=qtContext;
+        check(GetFocus()==qtStore->window,"Qt TSF fixture retains native window focus");
+        type("g");auto acquisitions=fixture.acquisitions;type("ksrmf aksemfdjTek ");
+        if(store->text!=L"한글 만들었다 ")std::cerr<<"Qt diagnostics: status="<<shared->status<<" stage="<<shared->diagnosticStage<<" hr="<<shared->diagnosticHr<<" focused="<<(GetFocus()==qtStore->window)<<" focusReads="<<field->focusReads<<" acquisitions="<<fixture.acquisitions<<"\n";
+        expectText(store->text,L"한글 만들었다 ","TSF unscoped Qt field composes Korean and shifted finals");
+        check(acquisitions>0&&fixture.acquisitions==acquisitions,"TSF Qt composition reuses accessible provider between keys");
+        auto beforeProtected=store->text;field->state|=STATE_SYSTEM_PROTECTED;check(!press('A'),"Qt password input bypasses TSF conversion");expectText(store->text,beforeProtected,"Qt password state preserves text store");
+        field->state=STATE_SYSTEM_FOCUSED|STATE_SYSTEM_READONLY;check(!press('A'),"Qt accessible read-only field bypasses conversion");
+        field->state=STATE_SYSTEM_FOCUSED;field->role=ROLE_SYSTEM_CLIENT;check(!press('A'),"unknown Qt role bypasses conversion");
+        field->role=ROLE_SYSTEM_TEXT;type("gksrmf ");expectText(store->text,beforeProtected+L"한글 ","Qt plain text recovers after protected input");
+        type("gksrmf");check(press(VK_SPACE,' '),"claimed boundary Space is inserted by the TIP");
+        expectText(store->text,beforeProtected+L"한글 한글 ","claimed Space is preserved exactly once");
+        type("hello");check(press(VK_OEM_PERIOD,'.'),"claimed punctuation is inserted by the TIP");
+        expectText(store->text,beforeProtected+L"한글 한글 hello.","claimed punctuation is preserved exactly once");
+        check(field->contentReads==0,"TSF Qt conversion never reads accessible input contents");
+        manager->SetFocus(doc.get());store=savedStore;context=savedContext;SetFocus(previousFocus);qtDoc->Pop(TF_POPF_ALL);qtContext.reset();qtDoc.reset();DestroyWindow(qtStore->window);qtStore.reset();UnregisterClassW(cls.lpszClassName,cls.hInstance);
+    }
     store->failSelection=true;auto beforeFailure=store->text;check(press('D','d'),"key consumed after text inserted despite selection failure");expectText(store->text,beforeFailure+L"d","no duplicated key on partial edit failure");store->failSelection=false;
     config.mode=3;writeConfig(shared,config);check(!press('A'),"pause bypasses input");config.mode=0;writeConfig(shared,config);
     type(" dkssud");shared->running=0;check(!press('X'),"tray exit bypasses input");
@@ -106,6 +132,26 @@ int wmain(){
     try {
         Engine engine(file("data/english_words.txt"),file("data/korean_words.txt"),file("data/korean_syllables.txt"));check(engine.ready(),"full dictionaries loaded");
         pastTenseRegression(engine);
+        check(accessible::qtWindow(L"Qt6103QWindowIcon")&&accessible::qtWindow(L"Qt5QWindowOwnDCIcon"),"Qt window classes across versions recognized");
+        for(auto name:{L"edit",L"QtQuickText",L"QtQWindowIcon",L"Qt6103QWindowIconExtra",L"Chrome_WidgetWin_1"})check(!accessible::qtWindow(name),"other custom windows do not gain Qt fallback");
+        Ptr<TestAccessible> editable(new TestAccessible,false),container(new TestAccessible,false);
+        Ptr<TestUnknownAlias> alias(new TestUnknownAlias(editable.get()),false);
+        check(sameObject(editable.get(),alias.get()),"different interface wrappers retain canonical COM identity");
+        check(!sameObject(editable.get(),container.get()),"different COM objects are not merged");
+        check(!sameObject(editable.get(),nullptr)&&sameObject(nullptr,nullptr),"null COM identity is handled safely");
+        check(accessible::focusedEditable(editable.get()),"focused accessible plain text accepted without reading content");
+        for(auto blocked:{STATE_SYSTEM_PROTECTED,STATE_SYSTEM_READONLY,STATE_SYSTEM_UNAVAILABLE,STATE_SYSTEM_INVISIBLE,STATE_SYSTEM_OFFSCREEN}){editable->state=STATE_SYSTEM_FOCUSED|blocked;check(!accessible::focusedEditable(editable.get()),"protected or unavailable Qt input rejected");}
+        editable->state=STATE_SYSTEM_FOCUSABLE;check(!accessible::focusedEditable(editable.get()),"unfocused text rejected");editable->state=STATE_SYSTEM_FOCUSED;
+        editable->role=ROLE_SYSTEM_CLIENT;check(!accessible::focusedEditable(editable.get()),"generic client is not editable evidence");editable->role=ROLE_SYSTEM_TEXT;
+        editable->focusResult=E_FAIL;check(!accessible::focusedEditable(editable.get()),"accessibility focus failure fails closed");editable->focusResult=S_OK;
+        editable->roleResult=E_FAIL;check(!accessible::focusedEditable(editable.get()),"accessibility role failure fails closed");editable->roleResult=S_OK;
+        editable->stateResult=E_FAIL;check(!accessible::focusedEditable(editable.get()),"accessibility state failure fails closed");editable->stateResult=S_OK;
+        editable->stateType=VT_EMPTY;check(!accessible::focusedEditable(editable.get()),"missing accessibility state rejected");editable->stateType=VT_I4;
+        editable->focusType=VT_EMPTY;check(!accessible::focusedEditable(editable.get()),"missing accessible focus rejected");editable->focusType=VT_I4;
+        container->child=Ptr<IAccessible>(editable.get());check(accessible::focusedEditable(container.get()),"Qt focused child dispatch resolved");
+        editable->state|=STATE_SYSTEM_PROTECTED;check(!accessible::focusedEditable(container.get()),"password focused child remains protected");editable->state=STATE_SYSTEM_FOCUSED;
+        container->child.reset();container->cycle=true;check(!accessible::focusedEditable(container.get()),"cyclic accessible focus terminates safely");
+        check(editable->contentReads==0&&container->contentReads==0,"privacy: no accessible values names or content requested");
         check(host::inspect(0,L"unused")==host::InputService::Unknown,"invalid host inspection is unknown");
         host::RestartNotices notices;
         check(!notices.observe(0,host::InputService::Outdated),"invalid process does not generate a restart notice");
@@ -183,6 +229,21 @@ int wmain(){
         Shared shared;shared.running=1;shared.heartbeat=static_cast<LONG>(GetTickCount());writeConfig(&shared,config);Config read;check(readConfig(&shared,read),"shared config snapshot");shared.heartbeat=static_cast<LONG>(GetTickCount()-3000);check(!readConfig(&shared,read),"dead tray stops input");shared.heartbeat=static_cast<LONG>(GetTickCount());shared.running=0;check(!readConfig(&shared,read),"exit stops input");
         // Exercise the actual DLL COM contracts without installing or selecting an IME.
         CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+        {
+            Ptr<TestAccessible> field(new TestAccessible,false);AccessibleWindowFixture fixture{field.get()};
+            WNDCLASSW cls{};cls.hInstance=GetModuleHandleW(nullptr);cls.lpfnWndProc=AccessibleWindowFixture::procedure;cls.lpszClassName=L"Qt6103QWindowIcon";RegisterClassW(&cls);
+            auto window=CreateWindowW(cls.lpszClassName,L"",WS_POPUP,0,0,100,40,nullptr,nullptr,cls.hInstance,&fixture);
+            auto previous=GetFocus();SetFocus(window);check(window&&GetFocus()==window,"owned custom Qt-style accessibility window focused");
+            accessible::QtInput proof;proof.update(window);check(proof.permits(window),"Qt input proof uses actual Windows accessibility provider");
+            auto acquisitions=fixture.acquisitions;check(acquisitions>0,"Qt provider acquired through WM_GETOBJECT");
+            for(int i=0;i<20;++i)proof.update(window);
+            check(fixture.acquisitions==acquisitions,"Qt provider cached rather than reacquired during every key");
+            field->state|=STATE_SYSTEM_PROTECTED;proof.update(window);check(!proof.permits(window),"live Qt password state invalidates prior plain-text proof");
+            field->state=STATE_SYSTEM_FOCUSED|STATE_SYSTEM_READONLY;proof.update(window);check(!proof.permits(window),"live Qt read-only state invalidates proof");
+            field->state=STATE_SYSTEM_FOCUSED;proof.update(window);check(proof.permits(window),"Qt plain text resumes after protected field");
+            check(field->contentReads==0,"native Qt safety proof never requests field contents");
+            proof.reset();check(!proof.permits(window),"cleared Qt proof cannot authorize old window");SetFocus(previous);DestroyWindow(window);UnregisterClassW(cls.lpszClassName,cls.hInstance);
+        }
         HMODULE dll=LoadLibraryW(L"build\\Atypoi.TestIME.dll");check(dll!=nullptr,"load isolated IME DLL");
         if(dll){
             auto get=reinterpret_cast<HRESULT(WINAPI*)(REFCLSID,REFIID,void**)>(GetProcAddress(dll,"DllGetClassObject"));

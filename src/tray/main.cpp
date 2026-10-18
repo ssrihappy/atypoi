@@ -2,6 +2,7 @@
 #include "../win/update.h"
 #include "../win/ui.h"
 #include "../win/host_version.h"
+#include "../win/input_profile.h"
 #include <commctrl.h>
 #include <commdlg.h>
 #include <windowsx.h>
@@ -45,9 +46,7 @@ bool automaticUpdates=true,backgroundUpdate=false;
 ULONGLONG nextUpdateCheck=0;
 std::vector<HWND> controls;
 bool activateProfile() {
-    Ptr<ITfInputProcessorProfileMgr> profiles;
-    auto hr=CoCreateInstance(CLSID_TF_InputProcessorProfiles,nullptr,CLSCTX_INPROC_SERVER,__uuidof(ITfInputProcessorProfileMgr),reinterpret_cast<void**>(profiles.put()));
-    return SUCCEEDED(hr)&&SUCCEEDED(profiles->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR,languageId,serviceId,profileId,nullptr,0x20000001)); // FORSESSION | ENABLEPROFILE
+    return activateInputProfile();
 }
 
 std::wstring text(HWND window) {int n=GetWindowTextLengthW(window);std::wstring value(n+1,L'\0');GetWindowTextW(window,value.data(),n+1);value.resize(n);return value;}
@@ -350,6 +349,7 @@ int WINAPI wWinMain(HINSTANCE app,HINSTANCE,LPWSTR,int) {
     if(!mutex)return 1;
     if(GetLastError()==ERROR_ALREADY_EXISTS){if(auto window=FindWindowW(appClass,nullptr)){ShowWindow(window,SW_SHOW);SetForegroundWindow(window);}CloseHandle(mutex);return 0;}
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    if(!demoMode&&legacyInputProfileActive())activateProfile();
     LoadLibraryW(L"Msftedit.dll");
     INITCOMMONCONTROLSEX controlsInit{sizeof controlsInit,ICC_STANDARD_CLASSES|ICC_LINK_CLASS};InitCommonControlsEx(&controlsInit);
     try{engine=loadEngine(instance);}catch(...){MessageBoxW(nullptr,L"입력 모델을 불러올 수 없습니다.",L"Atypoi",MB_ICONERROR);return 1;}

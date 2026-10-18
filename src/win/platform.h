@@ -22,10 +22,14 @@ inline constexpr GUID displayId={0x6ad0c905,0x478c,0x4e01,{0x95,0xf3,0x1e,0x8b,0
 inline constexpr GUID immersiveCategory={0x13a016df,0x560b,0x46cd,{0x94,0x7a,0x4c,0x3a,0xf1,0xe0,0xe3,0x5d}};
 inline constexpr GUID systrayCategory={0x25504fb4,0x7bab,0x4bc1,{0x9c,0x69,0xcf,0x81,0x89,0x0f,0x0e,0xf5}};
 inline constexpr GUID uiLessCategory={0x49d2f9cf,0x1f5e,0x11d7,{0xa6,0xd3,0x00,0x06,0x5b,0x84,0x43,0x5c}};
-inline constexpr LANGID languageId=0x0412;
+// Korean IMM compatibility restricts interim selections to one character and
+// commits ordinary multi-character compositions after each key. Register this
+// bilingual TIP under en-US so legacy IMM hosts retain the complete token.
+inline constexpr LANGID languageId=0x0409;
+inline constexpr LANGID legacyLanguageId=0x0412;
 inline constexpr wchar_t appClass[]=L"Atypoi.Tray.1";
 inline constexpr wchar_t settingsKey[]=L"Software\\Atypoi";
-inline constexpr wchar_t version[]=L"0.1.6";
+inline constexpr wchar_t version[]=L"0.1.7";
 inline constexpr size_t maxApps=32;
 
 template<class T> class Ptr {
@@ -45,6 +49,11 @@ public:
     T* detach(){auto p=p_;p_=nullptr;return p;}
 };
 template<class T> HRESULT query(IUnknown* p,Ptr<T>& out) {return p?p->QueryInterface(__uuidof(T),reinterpret_cast<void**>(out.put())):E_POINTER;}
+inline bool sameObject(IUnknown* a,IUnknown* b){
+    if(a==b)return true;if(!a||!b)return false;
+    Ptr<IUnknown> first,second;
+    return SUCCEEDED(query(a,first))&&SUCCEEDED(query(b,second))&&first.get()==second.get();
+}
 inline std::wstring guidString(REFGUID guid) {wchar_t text[40];StringFromGUID2(guid,text,40);return text;}
 inline std::wstring modulePath(HMODULE module=nullptr) {wchar_t path[32768];DWORD n=GetModuleFileNameW(module,path,32768);return n?std::wstring(path,n):L"";}
 inline std::wstring parentPath(const std::wstring& path) {auto i=path.find_last_of(L"\\/");return i==std::wstring::npos?L".":path.substr(0,i);}
